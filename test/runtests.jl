@@ -17,7 +17,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 using ollam
-using MNIST, Stage, SVM
+using MNIST, Stage, LIBSVM
 import Base: length, start, done, next
 
 # Helpers
@@ -45,6 +45,10 @@ for t in test_truth
 end
 @info log "truth set: $classes"
 
+# baseline test
+@timer log "libsvm direct" model = svmtrain(train_truth, train / 255.0, verbose = true, shrinking = false)
+(predicted_labels, decision_values) = svmpredict(model, test);
+@info log "test svm direct: $(mean(predicted_labels .== test_truth)*100.0)" 
 # setup models, train and evaluate
 @timer log "training linear (julia-implementation) SVM model" model = train_svm2(EachCol(train / 255.0), train_truth; C = 0.1, iterations = 100)
 @info log @sprintf("SVM (julia-implementation) test set error rate: %7.3f%%", test_classification(model, EachCol(test), test_truth) * 100.0)
