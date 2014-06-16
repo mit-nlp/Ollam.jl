@@ -19,7 +19,7 @@
 module ollam
 using Stage, LIBSVM, SVM
 import Base: copy, start, done, next
-export LinearModel, copy, score, best, train_perceptron, test_classification, train_svm, train_mira, train_svm2
+export LinearModel, copy, score, best, train_perceptron, test_classification, train_svm, train_mira, train_libsvm
 
 # ----------------------------------------------------------------------------------------------------------------
 # Utilities
@@ -42,30 +42,6 @@ function next(m :: Map, s)
   return (flt(n), s)
 end
 done(m :: Map, s) = done(m.itr)
-
-# const fpattern = r"^(.*?)\$\((.*)(%.*?)\)\$(.*)$"
-# sprintf(fmt::String,args...) = @eval @sprintf($fmt,$(args...))
-
-# macro f_str(str)
-#   local result = ""
-#   local s = str
-#   local m = match(fpattern, s)
-#   if m == nothing
-#     s
-#   else
-#     while m != nothing
-#       println("debug1: $m")
-#       result *= m.captures[1]
-#       fmt = m.captures[3]
-#       result *= @sprintf("%10.2f", 10.2) #eval(m.captures[2]))
-#       println("debug2: $result")
-#       println("result: $result")
-#       s = m.captures[4]
-#       m = match(fpattern, s)
-#     end
-#     result
-#   end
-# end  
 
 # ----------------------------------------------------------------------------------------------------------------
 # Types
@@ -269,7 +245,7 @@ function transfer(svm)
   return (weights, b)
 end
 
-function train_svm(fvs, truth; C = 1.0, nu = 0.5, cache_size = 200.0, eps = 0.0001, shrinking = true, verbose = false, log = Log(STDERR))
+function train_libsvm(fvs, truth; C = 1.0, nu = 0.5, cache_size = 200.0, eps = 0.0001, shrinking = true, verbose = false, gamma = 0.5, log = Log(STDERR))
   i = 1
   classes = Dict{Any, Int32}()
 
@@ -290,8 +266,8 @@ function train_svm(fvs, truth; C = 1.0, nu = 0.5, cache_size = 200.0, eps = 0.00
   for (t, ti) in classes
     @timer logger "training svm for class $t (index: $ti)" begin
       refs[ti] = @spawn begin
-        svm_t = svmtrain(map(c -> c == t ? 1 : -1, truth), feats; gamma = 0.5,
-                         C = C, nu = nu, kernel_type = int32(0), degree = int32(1), svm_type = int32(0),
+        svm_t = svmtrain(map(c -> c == t ? 1 : -1, truth), feats; 
+                         gamma = gamma, C = C, nu = nu, kernel_type = int32(0), degree = int32(1), svm_type = int32(0),
                          cache_size = cache_size, eps = eps, shrinking = shrinking, verbose = verbose)
         transfer(svm_t)
       end
@@ -313,7 +289,7 @@ function train_svm(fvs, truth; C = 1.0, nu = 0.5, cache_size = 200.0, eps = 0.00
   return model # transfer(classes, svms)
 end
 
-function train_svm2(fvs, truth; C = 0.01, batch_size = -1, iterations = 100)
+function train_svm(fvs, truth; C = 0.01, batch_size = -1, iterations = 100)
   i = 1
   classes = Dict{Any, Int32}()
 
