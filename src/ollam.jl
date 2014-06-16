@@ -290,7 +290,7 @@ function train_svm(fvs, truth; C = 1.0, nu = 0.5, cache_size = 200.0, eps = 0.00
   for (t, ti) in classes
     @timer logger "training svm for class $t (index: $ti)" begin
       refs[ti] = @spawn begin
-        svm_t = svmtrain(map(c -> c == t ? 1 : -1, truth), feats;
+        svm_t = svmtrain(map(c -> c == t ? 1 : -1, truth), feats; gamma = 0.5,
                          C = C, nu = nu, kernel_type = int32(0), degree = int32(1), svm_type = int32(0),
                          cache_size = cache_size, eps = eps, shrinking = shrinking, verbose = verbose)
         transfer(svm_t)

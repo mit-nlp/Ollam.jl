@@ -46,7 +46,7 @@ end
 @info log "truth set: $classes"
 
 # setup models, train and evaluate
-@timer log "training linear (julia-implementation) SVM model" model = train_svm2(EachCol(train / 255.0), train_truth; C = 0.01, iterations = 100)
+@timer log "training linear (julia-implementation) SVM model" model = train_svm2(EachCol(train / 255.0), train_truth; C = 0.1, iterations = 100)
 @info log @sprintf("SVM (julia-implementation) test set error rate: %7.3f%%", test_classification(model, EachCol(test), test_truth) * 100.0)
 
 init  = LinearModel(classes, length(train[:, 1]))
@@ -57,7 +57,7 @@ init  = LinearModel(classes, length(train[:, 1]))
 @timer log "training averaged MIRA model" model = train_mira(EachCol(train), train_truth, init; iterations = 30, average = true, C = 0.1)
 @info log @sprintf("averaged MIRA test set error rate: %7.3f%%", test_classification(model, EachCol(test), test_truth) * 100.0)
 
-@timer log "training linear SVM (libsvm) model" model = train_svm(EachCol(train[:, 1:20000] / 255.0), train_truth[1:20000]; C = 1.0, cache_size = 250.0, eps = 0.2, shrinking = false, verbose = false)
+@timer log "training linear SVM (libsvm) model" model = train_svm(EachCol(train[:, 1:20000] / 255.0), train_truth[1:20000]; C = 1.0, cache_size = 250.0, eps = 0.001, shrinking = true)
 @info log @sprintf("SVM (libsvm) test set error rate: %7.3f%%", test_classification(model, EachCol(test), test_truth) * 100.0)
 
 init  = LinearModel(classes, length(train[:, 1]))
