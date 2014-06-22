@@ -19,6 +19,7 @@
 using ollam
 using MNIST, Stage, LIBSVM
 import Base: length, start, done, next
+using Base.Test
 
 # Helpers
 log = Log(STDERR)
@@ -30,6 +31,12 @@ length(e :: EachCol)      = size(e.matrix, 2)
 start(e :: EachCol)       = 1
 next(e :: EachCol, state) = (e.matrix[:, state], state + 1)
 done(e :: EachCol, state) = state > length(e) ? true : false
+
+# test lazy maps
+xxx = [1, 2, 3]
+for i in lazy_map(f -> f+1, xxx)
+  println(i)
+end
 
 # setup MNIST task
 @info log "reading training data"
@@ -50,13 +57,13 @@ end
 @info log "truth set: $classes"
 
 # baseline test with degree-3 RBF kernel
-@timer log "libsvm direct" model = svmtrain(train_truth, train, C = 10.0, verbose = true, shrinking = true)
-(predicted_labels, decision_values) = svmpredict(model, test);
-@info log "test svm direct: $((1.0 - mean(predicted_labels .== test_truth))*100.0)" 
+# @timer log "libsvm direct" model = svmtrain(train_truth, train, C = 10.0, verbose = true, shrinking = true)
+# (predicted_labels, decision_values) = svmpredict(model, test);
+# @info log "test svm direct: $((1.0 - mean(predicted_labels .== test_truth))*100.0)" 
 
 # setup models, train and evaluate
-@timer log "training linear (julia-implementation) SVM model" model = train_svm(EachCol(train), train_truth; C = 0.1, iterations = 100)
-@info log @sprintf("SVM (julia-implementation) test set error rate: %7.3f%%", test_classification(model, EachCol(test), test_truth) * 100.0)
+# @timer log "training linear (julia-implementation) SVM model" model = train_svm(EachCol(train), train_truth; C = 0.1, iterations = 100)
+# @info log @sprintf("SVM (julia-implementation) test set error rate: %7.3f%%", test_classification(model, EachCol(test), test_truth) * 100.0)
 
 init  = LinearModel(classes, length(train[:, 1]))
 @timer log "training MIRA model" model = train_mira(EachCol(train), train_truth, init; iterations = 30, average = false)

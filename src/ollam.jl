@@ -18,8 +18,8 @@
 # limitations under the License.
 module ollam
 using Stage, LIBSVM, SVM
-import Base: copy, start, done, next
-export LinearModel, copy, score, best, train_perceptron, test_classification, train_svm, train_mira, train_libsvm
+import Base: copy, start, done, next, length, dot
+export LinearModel, copy, score, best, train_perceptron, test_classification, train_svm, train_mira, train_libsvm, lazy_map
 
 # ----------------------------------------------------------------------------------------------------------------
 # Utilities
@@ -32,16 +32,26 @@ immutable Map{I}
 end
 lazy_map(f::Function, itr) = Map(f, itr)
 
-function start(m::Map) 
-  s = start(itr)
+function start(m :: Map) 
+  s = start(m.itr)
   return s
 end
 
 function next(m :: Map, s) 
-  n = next(m.itr, s)
-  return (flt(n), s)
+  n, ns = next(m.itr, s)
+  return (m.flt(n), ns)
 end
-done(m :: Map, s) = done(m.itr)
+
+done(m :: Map, s) = done(m.itr, s)
+length(m :: Map) = length(m.itr)
+
+# linear algebra helpers
+dot(a::SparseMatrixCSC, b::SparseMatrixCSC) = (a' * b)[1]
+dot(a::Vector, b::SparseMatrixCSC) = (a' * b)[1]
+dot(a::SparseMatrixCSC, b::Vector) = (a' * b)[1]
+
+indices(a::SparseMatrixCSC) = a.rowval
+indices(a::Vector)          = 1:length(a)
 
 # ----------------------------------------------------------------------------------------------------------------
 # Types
@@ -76,6 +86,7 @@ end
 
 function test_classification(lm :: LinearModel, fvs, truth)
   errors = 0
+  total  = 0
 
   for (fv, t) in zip(fvs, truth)
     scores  = score(lm, fv)
@@ -83,9 +94,10 @@ function test_classification(lm :: LinearModel, fvs, truth)
     if lm.index_class[bidx] != t
       errors += 1
     end
+    total += 1
   end
 
-  return errors / length(truth)
+  return errors / total
 end
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -123,11 +135,27 @@ end
 # ----------------------------------------------------------------------------------------------------------------
 # MIRA
 # ----------------------------------------------------------------------------------------------------------------
+function mira_update(weights, bidx, tidx, alpha, fv::SparseMatrixCSC)
+  for idx in indices(fv)
+    tmp = alpha * fv[idx]
+    weights[bidx, idx] -= tmp
+    weights[tidx, idx] += tmp
+  end
+end
+
+function mira_update(weights, bidx, tidx, alpha, fv::Vector)
+  tmp = alpha * fv'
+  weights[bidx, :] -= tmp
+  weights[tidx, :] += tmp
+end
+
 function train_mira(fvs, truth, init_model; average = true, C = 0.1, k = 3, iterations = 40, lossfn = (a, b) -> a == b ? 0.0 : 1.0, log = Log(STDERR))
   model = copy(init_model)
   acc   = LinearModel(init_model.class_index, dims(init_model))
+  numfv = 0
 
   for i = 1:iterations
+    numfv = 0
     for (fv, t) in zip(fvs, truth)
       scores        = score(model, fv)
       tidx          = model.class_index[t]
@@ -154,19 +182,28 @@ function train_mira(fvs, truth, init_model; average = true, C = 0.1, k = 3, iter
       loss  = lossfn(t, class)
       dist  = tgt_score - b_score
       alpha = min((loss - dist) / (2 * dot(fv, fv)), C)
-      #@debug logger "loss = $loss, dist = $dist [$tgt_score - $b_score], denom = $(2 * dot(fv, fv)), alpha = $alpha"
 
-      model.weights[bidx, :] -= alpha * fv'
-      model.weights[tidx, :] += alpha * fv'
+      # @debug logger "loss = $loss, dist = $dist [$tgt_score - $b_score], denom = $(2 * dot(fv, fv)), alpha = $alpha"
+      mira_update(model.weights, bidx, tidx, alpha, fv)
+      # model.weights[bidx, :] -= alpha * fv'
+      # model.weights[tidx, :] += alpha * fv'
+      # for idx in indices(fv)
+      #   tmp = alpha * fv[idx]
+      #   model.weights[bidx, idx] -= tmp
+      #   model.weights[tidx, idx] += tmp
+      # end
+
+
       if average
         acc.weights += model.weights
       end
+      numfv += 1
     end
     @info log @sprintf("iteration %3d complete (Training error rate: %7.3f%%)", i, test_classification(model, fvs, truth) * 100.0)
   end
   
   if average
-    acc.weights /= (length(fvs) * iterations)
+    acc.weights /= (numfv * iterations)
     return acc
   else
     return model
