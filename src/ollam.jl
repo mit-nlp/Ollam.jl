@@ -46,12 +46,26 @@ done(m :: Map, s) = done(m.itr, s)
 length(m :: Map) = length(m.itr)
 
 # linear algebra helpers
-dot(a::SparseMatrixCSC, b::SparseMatrixCSC) = (a' * b)[1]
-dot(a::Vector, b::SparseMatrixCSC) = (a' * b)[1]
-dot(a::SparseMatrixCSC, b::Vector) = (a' * b)[1]
-
 indices(a::SparseMatrixCSC) = a.rowval
 indices(a::Vector)          = 1:length(a)
+
+dot(a::SparseMatrixCSC, b::Vector) = dot(b, a)
+dot(a::SparseMatrixCSC, b::Matrix) = dot(b, a)
+function dot(a::Vector, b::SparseMatrixCSC)
+  total = 0.0
+  for i in indices(b)
+    total += a[i] * b[i]
+  end
+  return total
+end
+function dot(a::Union(Matrix, SparseMatrixCSC), b::SparseMatrixCSC) 
+  total = 0.0
+  for i in indices(b)
+    total += a[1, i] * b[i]
+  end
+  return total
+end
+dot(a::Matrix, b::Vector) = (a * b)[1]
 
 # ----------------------------------------------------------------------------------------------------------------
 # Types
@@ -77,7 +91,7 @@ function LinearModel{T}(classes::Dict{T, Int32}, dims)
 end
 
 copy(lm :: LinearModel) = LinearModel(copy(lm.weights), copy(lm.b), copy(lm.class_index), copy(lm.index_class))
-score(lm :: LinearModel, fv) = [ (lm.weights[c, :] * fv)[1] + lm.b[c] for c = 1:size(lm.weights, 1) ]
+score(lm :: LinearModel, fv) = lm.weights * fv + lm.b #[ dot(lm.weights[c, :], fv) + lm.b[c] for c = 1:size(lm.weights, 1) ]
 
 function best{T <: FloatingPoint}(scores :: Vector{T}) 
   bidx = indmax(scores)
@@ -181,7 +195,7 @@ function train_mira(fvs, truth, init_model; average = true, C = 0.1, k = 3, iter
       class = model.index_class[bidx]
       loss  = lossfn(t, class)
       dist  = tgt_score - b_score
-      alpha = min((loss - dist) / (2 * dot(fv, fv)), C)
+      alpha = min((loss - dist) / (2 * dot(fv', fv)), C)
 
       # @debug logger "loss = $loss, dist = $dist [$tgt_score - $b_score], denom = $(2 * dot(fv, fv)), alpha = $alpha"
       mira_update(model.weights, bidx, tidx, alpha, fv)
