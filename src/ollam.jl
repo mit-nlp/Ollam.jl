@@ -17,9 +17,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 module ollam
-using Stage, LIBSVM, SVM
+using Stage, LIBSVM, SVM, DataStructures, CVX
 import Base: copy, start, done, next, length, dot
-export LinearModel, copy, score, best, train_perceptron, test_classification, train_svm, train_mira, train_libsvm, lazy_map
+export LinearModel, copy, score, best, train_perceptron, test_classification, train_svm, train_mira, train_libsvm, lazy_map, indices, print_confusion_matrix, hildreth, setup_hildreth
 
 # ----------------------------------------------------------------------------------------------------------------
 # Utilities
@@ -49,16 +49,24 @@ length(m :: Map) = length(m.itr)
 indices(a::SparseMatrixCSC) = a.rowval
 indices(a::Vector)          = 1:length(a)
 
+sqr(a::Vector) = norm(a)^2
+function sqr(a::SparseMatrixCSC)
+  total = 0.0
+  for i in indices(a)
+    total += a[i] * a[i]
+  end
+  return total
+end
 dot(a::SparseMatrixCSC, b::Vector) = dot(b, a)
 dot(a::SparseMatrixCSC, b::Matrix) = dot(b, a)
-function dot(a::Vector, b::SparseMatrixCSC)
+function dot(a::Union(Vector, SparseMatrixCSC), b::SparseMatrixCSC)
   total = 0.0
   for i in indices(b)
     total += a[i] * b[i]
   end
   return total
 end
-function dot(a::Union(Matrix, SparseMatrixCSC), b::SparseMatrixCSC) 
+function dot(a::Matrix, b::SparseMatrixCSC) 
   total = 0.0
   for i in indices(b)
     total += a[1, i] * b[i]
@@ -66,6 +74,36 @@ function dot(a::Union(Matrix, SparseMatrixCSC), b::SparseMatrixCSC)
   return total
 end
 dot(a::Matrix, b::Vector) = (a * b)[1]
+
+function print_confusion_matrix(confmat)
+  total, errors = 0, 0
+
+  str = @sprintf("%10s", "")
+  for t in keys(confmat)
+    str *= @sprintf(" %10s", t)
+  end
+  @sep logger
+  @info logger "$str" * @sprintf(" %10s %10s", "N", "class %")
+  
+  for t in keys(confmat)
+    str = @sprintf("%-10s", t)
+    rtotal, rerrors = 0, 0
+    for h in keys(confmat)
+      str *= @sprintf(" %10d", confmat[t][h])
+      if t != h
+        rerrors += confmat[t][h]
+      end
+      rtotal += confmat[t][h]
+    end
+    errors += rerrors
+    total  += rtotal
+    @info logger "$str" * @sprintf(" %10d %10.7f", rtotal, 1.0 - rerrors/rtotal)
+  end
+  @sep logger
+  
+  @info logger "accuracy = $(1.0 - errors/total)"
+  
+end
 
 # ----------------------------------------------------------------------------------------------------------------
 # Types
@@ -91,23 +129,25 @@ function LinearModel{T}(classes::Dict{T, Int32}, dims)
 end
 
 copy(lm :: LinearModel) = LinearModel(copy(lm.weights), copy(lm.b), copy(lm.class_index), copy(lm.index_class))
-score(lm :: LinearModel, fv) = lm.weights * fv + lm.b #[ dot(lm.weights[c, :], fv) + lm.b[c] for c = 1:size(lm.weights, 1) ]
+score(lm :: LinearModel, fv::Vector) = lm.weights * fv + lm.b #[ dot(lm.weights[c, :], fv) + lm.b[c] for c = 1:size(lm.weights, 1) ]
+score(lm :: LinearModel, fv::SparseMatrixCSC) = vec(lm.weights * fv + lm.b) #[ dot(lm.weights[c, :], fv) + lm.b[c] for c = 1:size(lm.weights, 1) ]
 
 function best{T <: FloatingPoint}(scores :: Vector{T}) 
   bidx = indmax(scores)
   return bidx, scores[bidx]
 end
 
-function test_classification(lm :: LinearModel, fvs, truth)
+function test_classification(lm :: LinearModel, fvs, truth; record = (truth, hyp) -> nothing)
   errors = 0
   total  = 0
-
+  
   for (fv, t) in zip(fvs, truth)
     scores  = score(lm, fv)
     bidx, b = best(scores)
     if lm.index_class[bidx] != t
       errors += 1
     end
+    record(t, lm.index_class[bidx])
     total += 1
   end
 
@@ -163,53 +203,151 @@ function mira_update(weights, bidx, tidx, alpha, fv::Vector)
   weights[tidx, :] += tmp
 end
 
-function train_mira(fvs, truth, init_model; average = true, C = 0.1, k = 3, iterations = 40, lossfn = (a, b) -> a == b ? 0.0 : 1.0, log = Log(STDERR))
+type HildrethState
+  k           :: Int32
+  alpha       :: Vector{Float64}
+  F           :: Vector{Float64}
+  kkt         :: Vector{Float64}
+  C           :: Float64
+  A           :: Matrix{Float64}
+  is_computed :: Vector{Bool}
+  EPS         :: Float64
+  ZERO        :: Float64
+  MAX_ITER    :: Float64
+end
+
+function setup_hildreth(;k = 5, C = 0.1, EPS = 1e-8, ZERO = 0.0000000000000001, MAX_ITER = 10000) # assumes that the number of contraints == number of distances
+  alpha       = zeros(k)
+  F           = zeros(k)
+  kkt         = zeros(k)
+  A           = zeros(k, k)
+  is_computed = falses(k)
+  return HildrethState(k, alpha, F, kkt, C, A, is_computed, EPS, ZERO, MAX_ITER)
+end
+
+# translated from Ryan McDonald's MST Parser
+function hildreth(a, b, h)
+  max_kkt = -Inf
+  max_kkt_i = -1
+
+  for i = 1:h.k
+    h.A[i, i] = dot(a[i], a[i])
+    h.kkt[i] = h.F[i] = b[i]
+    h.is_computed[i] = false
+    if h.kkt[i] > max_kkt
+      max_kkt   = h.kkt[i]
+      max_kkt_i = i
+    end
+    h.alpha[i] = 0.0
+  end
+
+  iter = 0
+  while max_kkt >= h.EPS && iter < h.MAX_ITER
+    diff_alpha = h.A[max_kkt_i, max_kkt_i] <= h.ZERO ? 0.0 : h.F[max_kkt_i] / h.A[max_kkt_i, max_kkt_i]
+    try_alpha  = h.alpha[max_kkt_i] + diff_alpha
+    add_alpha  = 0.0
+    
+    if try_alpha < 0.0
+      add_alpha = - h.alpha[max_kkt_i]
+    elseif try_alpha > h.C
+      add_alpha = h.C - h.alpha[max_kkt_i]
+    else
+      add_alpha = diff_alpha
+    end
+
+    h.alpha[max_kkt_i] += add_alpha
+
+    if !h.is_computed[max_kkt_i]
+      for i = 1:h.k
+	h.A[i, max_kkt_i] = dot(a[i], a[max_kkt_i])
+	h.is_computed[max_kkt_i] = true
+      end
+    end
+    for i = 1:h.k
+      h.F[i]  -= add_alpha * h.A[i, max_kkt_i]
+      h.kkt[i] = h.F[i]
+      if h.alpha[i] > (h.C - h.ZERO)
+	h.kkt[i] = -h.kkt[i]
+      elseif h.alpha[i] > h.ZERO
+	h.kkt[i] = abs(h.F[i])
+      end
+    end		
+    max_kkt   = -Inf
+    max_kkt_i = -1
+    for i = 1:h.k
+      if h.kkt[i] > max_kkt 
+        max_kkt   = h.kkt[i]
+        max_kkt_i = i
+      end
+    end
+    iter += 1
+  end
+
+  return h.alpha
+end
+
+function train_mira(fvs, truth, init_model; average = true, C = 0.1, k = 1, iterations = 20, lossfn = (a, b) -> a == b ? 0.0 : 1.0, log = Log(STDERR))
   model = copy(init_model)
   acc   = LinearModel(init_model.class_index, dims(init_model))
   numfv = 0
 
+  h       = setup_hildreth(k = min(k, length(model.class_index)), C = C)
+  b       = Array(Float64, h.k)
+  kidx    = Array(Int32, h.k)
+  distvec = Array(Union(SparseMatrixCSC, Vector), h.k)
+  
   for i = 1:iterations
     numfv = 0
+    alpha = 0.0
     for (fv, t) in zip(fvs, truth)
-      scores        = score(model, fv)
-      tidx          = model.class_index[t]
-      tgt_score     = scores[tidx]
-      bidx, b_score = best(scores)
+      scores    = score(model, fv)
+      tidx      = model.class_index[t]
+      tgt_score = scores[tidx]
 
       # K-best
-      # b       = (Float64)[]
-      # sorted  = sort(enumerate(scores), rev = true, by = x -> x[2])
-      # distvec = (AbstractVector{Float64})[]
-      # for n = 1:min(k, length(sorted))
-      #   cidx, score = sorted[n]
-      #   class       = model.index_class[cidx]
-      #   targetP     = class == t
-      #   loss        = targetP ? 0.0 : 1.0
-      #   dist        = tgt_score - score
+      if h.k > 1
+        sorted = sortperm(scores, rev = true) #sort([ x for x in enumerate(scores) ], rev = true, by = x -> x[2])
+        for n = 1:h.k
+          cidx        = sorted[n]
+          score       = scores[cidx]
+          class       = model.index_class[cidx]
+          loss        = lossfn(t, class)
+          dist        = tgt_score - score
+        
+          b[n]       = loss - dist
+          distvec[n] = 2 * fv
+          kidx[n]    = cidx
+        end
+        
+        alphas = hildreth(distvec, b, h)
 
-      #   push!(b, loss - dist)
-      #   push!(distvec, spzero(dims(model)))
-      # end
+        # update
+        for n = 1:h.k
+          for d in indices(fv)
+            model.weights[kidx[n], d] -= alphas[n] * fv[d]
+            model.weights[tidx, d]    += alphas[n] * fv[d]
+          end
+        end
+      else
+        bidx, b_score = best(scores)
+        #@debug logger "truth: $t -- best class $(model.index_class[bidx]) -- best score: $b_score, truth score: $tgt_score"
 
-      # 1-best
-      class = model.index_class[bidx]
-      loss  = lossfn(t, class)
-      dist  = tgt_score - b_score
-      alpha = min((loss - dist) / (2 * dot(fv', fv)), C)
+        # 1-best
+        class = model.index_class[bidx]
+        loss  = lossfn(t, class)
+        dist  = tgt_score - b_score
+        alpha = min((loss - dist) / (2 * sqr(fv)), C)
 
-      # @debug logger "loss = $loss, dist = $dist [$tgt_score - $b_score], denom = $(2 * dot(fv, fv)), alpha = $alpha"
-      mira_update(model.weights, bidx, tidx, alpha, fv)
-      # model.weights[bidx, :] -= alpha * fv'
-      # model.weights[tidx, :] += alpha * fv'
-      # for idx in indices(fv)
-      #   tmp = alpha * fv[idx]
-      #   model.weights[bidx, idx] -= tmp
-      #   model.weights[tidx, idx] += tmp
-      # end
-
+        #@debug logger "loss = $loss, dist = $dist [$tgt_score - $b_score], denom = $(2 * norm(fv)^2), alpha = $alpha"
+        mira_update(model.weights, bidx, tidx, alpha, fv)
+      end
 
       if average
-        acc.weights += model.weights
+        for x = 1:size(acc.weights, 1)
+          for y = 1:size(acc.weights, 2)
+            acc.weights[x, y] += model.weights[x, y]
+          end
+        end
       end
       numfv += 1
     end

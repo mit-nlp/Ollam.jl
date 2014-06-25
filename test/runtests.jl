@@ -32,10 +32,16 @@ start(e :: EachCol)       = 1
 next(e :: EachCol, state) = (e.matrix[:, state], state + 1)
 done(e :: EachCol, state) = state > length(e) ? true : false
 
+# test hildreth
+h = setup_hildreth(C = Inf, k = 2)
+@test abs(hildreth((SparseMatrixCSC)[ spzeros(1235, 1),
+                sparsevec([470=>-1.0, 1070=>-1.0, 1231=>-1.0, 1232=>-1.0, 1233=>-1.0, 1234=>-1.0, 1235=>-1.0, 496=>1.0, 
+                           1058=>1.0, 1226=>1.0, 1227=>1.0, 1228=>1.0, 1229=>1.0, 1230=>1.0]) ], [ 0.0, 0.9733606705258293 ], h)[2] - 0.069526) < 0.00001
+
 # test lazy maps
 xxx = [1, 2, 3]
 for i in lazy_map(f -> f+1, xxx)
-  println(i)
+  @info log i
 end
 
 # setup MNIST task
@@ -65,13 +71,22 @@ end
 # @timer log "training linear (julia-implementation) SVM model" model = train_svm(EachCol(train), train_truth; C = 0.1, iterations = 100)
 # @info log @sprintf("SVM (julia-implementation) test set error rate: %7.3f%%", test_classification(model, EachCol(test), test_truth) * 100.0)
 
-init  = LinearModel(classes, length(train[:, 1]))
-@timer log "training MIRA model" model = train_mira(EachCol(train), train_truth, init; iterations = 30, average = false)
-@info log @sprintf("MIRA test set error rate: %7.3f%%", test_classification(model, EachCol(test), test_truth) * 100.0)
+# init  = LinearModel(classes, length(train[:, 1]))
+# @timer log "training 1-best MIRA model" model = train_mira(EachCol(train), train_truth, init; k = 1, iterations = 30, average = false)
+# @info log @sprintf("1-best MIRA test set error rate: %7.3f%%", test_classification(model, EachCol(test), test_truth) * 100.0)
+
+# init  = LinearModel(classes, length(train[:, 1]))
+# @timer log "training averaged 1-best MIRA model" model = train_mira(EachCol(train), train_truth, init; k = 1, iterations = 30, average = true, C = 0.1)
+# @info log @sprintf("averaged 1-best MIRA test set error rate: %7.3f%%", test_classification(model, EachCol(test), test_truth) * 100.0)
 
 init  = LinearModel(classes, length(train[:, 1]))
-@timer log "training averaged MIRA model" model = train_mira(EachCol(train), train_truth, init; iterations = 30, average = true, C = 0.1)
-@info log @sprintf("averaged MIRA test set error rate: %7.3f%%", test_classification(model, EachCol(test), test_truth) * 100.0)
+@profile @timer log "training 5-best MIRA model" model = train_mira(EachCol(train), train_truth, init; k = 5, iterations = 30, average = false)
+Profile.print(format = :flat)
+@info log @sprintf("5-best MIRA test set error rate: %7.3f%%", test_classification(model, EachCol(test), test_truth) * 100.0)
+
+init  = LinearModel(classes, length(train[:, 1]))
+@timer log "training averaged 5-best MIRA model" model = train_mira(EachCol(train), train_truth, init; k = 5, iterations = 30, average = true, C = 0.1)
+@info log @sprintf("averaged 5-best MIRA test set error rate: %7.3f%%", test_classification(model, EachCol(test), test_truth) * 100.0)
 
 @timer log "training linear SVM (libsvm) model" model = train_libsvm(EachCol(train[:, 1:20000]), train_truth[1:20000]; 
                                                                      C = 1.0, cache_size = 250.0, eps = 0.001, shrinking = true)
