@@ -286,7 +286,9 @@ function hildreth(a, b, h)
   return h.alpha
 end
 
-function train_mira(fvs, truth, init_model; average = true, C = 0.1, k = 1, iterations = 20, lossfn = (a, b) -> a == b ? 0.0 : 1.0, log = Log(STDERR))
+function train_mira(fvs, truth, init_model; 
+                    average = true, C = 0.1, k = 1, iterations = 20, lossfn = (a, b) -> a == b ? 0.0 : 1.0, 
+                    log = Log(STDERR), verbose = true)
   model = copy(init_model)
   acc   = LinearModel(init_model.class_index, dims(init_model))
   numfv = 0
@@ -306,7 +308,7 @@ function train_mira(fvs, truth, init_model; average = true, C = 0.1, k = 1, iter
 
       # K-best
       if h.k > 1
-        sorted = sortperm(scores, rev = true) #sort([ x for x in enumerate(scores) ], rev = true, by = x -> x[2])
+        sorted = sortperm(scores, rev = true)
         for n = 1:h.k
           cidx        = sorted[n]
           score       = scores[cidx]
@@ -351,7 +353,9 @@ function train_mira(fvs, truth, init_model; average = true, C = 0.1, k = 1, iter
       end
       numfv += 1
     end
-    @info log @sprintf("iteration %3d complete (Training error rate: %7.3f%%)", i, test_classification(model, fvs, truth) * 100.0)
+    if verbose
+      @info log @sprintf("iteration %3d complete (Training error rate: %7.3f%%)", i, test_classification(model, fvs, truth) * 100.0)
+    end
   end
   
   if average

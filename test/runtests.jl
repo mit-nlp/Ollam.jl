@@ -80,8 +80,7 @@ end
 # @info log @sprintf("averaged 1-best MIRA test set error rate: %7.3f%%", test_classification(model, EachCol(test), test_truth) * 100.0)
 
 init  = LinearModel(classes, length(train[:, 1]))
-@profile @timer log "training 5-best MIRA model" model = train_mira(EachCol(train), train_truth, init; k = 5, iterations = 30, average = false)
-Profile.print(format = :flat)
+@timer log "training 5-best MIRA model" model = train_mira(EachCol(train), train_truth, init; k = 5, iterations = 30, average = false)
 @info log @sprintf("5-best MIRA test set error rate: %7.3f%%", test_classification(model, EachCol(test), test_truth) * 100.0)
 
 init  = LinearModel(classes, length(train[:, 1]))
