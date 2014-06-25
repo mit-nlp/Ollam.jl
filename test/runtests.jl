@@ -48,7 +48,7 @@ end
 @info log "reading training data"
 const train_raw, train_truth = traindata()
 const test_raw, test_truth   = testdata()
-const classes                = Dict{Integer, Int32}()
+const classes                = Dict{Float64, Int32}()
 const train                  = train_raw / 255.0
 const test                   = test_raw / 255.0
 

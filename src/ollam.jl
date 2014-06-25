@@ -19,7 +19,8 @@
 module ollam
 using Stage, LIBSVM, SVM, DataStructures, CVX
 import Base: copy, start, done, next, length, dot
-export LinearModel, copy, score, best, train_perceptron, test_classification, train_svm, train_mira, train_libsvm, lazy_map, indices, print_confusion_matrix, hildreth, setup_hildreth
+export LinearModel, copy, score, best, train_perceptron, test_classification, train_svm, train_mira, train_libsvm, lazy_map, indices, 
+       print_confusion_matrix, hildreth, setup_hildreth, zero_one_loss
 
 # ----------------------------------------------------------------------------------------------------------------
 # Utilities
@@ -113,7 +114,7 @@ type LinearModel{T}
   b           :: Vector{Float64}
 
   class_index :: Dict{T, Int32}
-  index_class :: Array{T, 1}
+  index_class :: Vector{T}
 end
 
 dims(lm :: LinearModel)    = size(lm.weights, 2)
@@ -286,8 +287,10 @@ function hildreth(a, b, h)
   return h.alpha
 end
 
+zero_one_loss(a, b) = a == b ? 0.0 : 1.0
+
 function train_mira(fvs, truth, init_model; 
-                    average = true, C = 0.1, k = 1, iterations = 20, lossfn = (a, b) -> a == b ? 0.0 : 1.0, 
+                    average = true, C = 0.1, k = 1, iterations = 20, lossfn = zero_one_loss,
                     log = Log(STDERR), verbose = true)
   model = copy(init_model)
   acc   = LinearModel(init_model.class_index, dims(init_model))
