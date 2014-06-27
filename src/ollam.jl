@@ -130,8 +130,17 @@ function LinearModel{T}(classes::Dict{T, Int32}, dims)
 end
 
 copy(lm :: LinearModel) = LinearModel(copy(lm.weights), copy(lm.b), copy(lm.class_index), copy(lm.index_class))
-score(lm :: LinearModel, fv::Vector) = lm.weights * fv + lm.b #[ dot(lm.weights[c, :], fv) + lm.b[c] for c = 1:size(lm.weights, 1) ]
-score(lm :: LinearModel, fv::SparseMatrixCSC) = vec(lm.weights * fv + lm.b) #[ dot(lm.weights[c, :], fv) + lm.b[c] for c = 1:size(lm.weights, 1) ]
+score(lm :: LinearModel, fv::Vector) = lm.weights * fv + lm.b
+score(lm :: LinearModel, fv::SparseMatrixCSC) = vec(lm.weights * fv + lm.b)
+
+function acc_update(model :: LinearModel, acc :: LinearModel)
+  for x = 1:size(acc.weights, 1)
+    for y = 1:size(acc.weights, 2)
+      acc.weights[x, y] += model.weights[x, y]
+    end
+  end
+end
+
 
 function best{T <: FloatingPoint}(scores :: Vector{T}) 
   bidx = indmax(scores)
@@ -158,7 +167,14 @@ end
 # ----------------------------------------------------------------------------------------------------------------
 # Perceptron
 # ----------------------------------------------------------------------------------------------------------------
-function train_perceptron(fvs, truth, init_model; learn_rate = 1.0, average = true, iterations = 40, log = Log(STDERR))
+function perceptron_update(model, c, alpha, fv)
+  for i in indices(fv)
+    model.weights[c, i] += alpha * fv[i]
+  end
+end
+
+function train_perceptron(fvs, truth, init_model; learn_rate = 1.0, average = true, iterations = 40, 
+                          log = Log(STDERR), verbose = true)
   model = copy(init_model)
   acc   = LinearModel(init_model.class_index, dims(init_model))
 
@@ -169,14 +185,18 @@ function train_perceptron(fvs, truth, init_model; learn_rate = 1.0, average = tr
       if model.index_class[bidx] != t
         for c = 1:classes(model)
           sign = model.index_class[c] == t ? 1.0 : (-1.0 / (classes(model) - 1))
-          model.weights[c, :] += sign * learn_rate * fv'
+          #model.weights[c, :] += sign * learn_rate * fv'
+          perceptron_update(model, c, sign * learn_rate, fv)
           if average
-            acc.weights += model.weights
+            acc_update(model, acc)
+            #acc.weights += model.weights
           end
         end
       end
     end
-    @info log @sprintf("iteration %3d complete (Training error rate: %7.3f%%)", i, test_classification(model, fvs, truth) * 100.0)
+    if verbose
+      @info log @sprintf("iteration %3d complete (Training error rate: %7.3f%%)", i, test_classification(model, fvs, truth) * 100.0)
+    end
   end
   
   if average
@@ -190,18 +210,12 @@ end
 # ----------------------------------------------------------------------------------------------------------------
 # MIRA
 # ----------------------------------------------------------------------------------------------------------------
-function mira_update(weights, bidx, tidx, alpha, fv::SparseMatrixCSC)
+function mira_update(weights, bidx, tidx, alpha, fv)
   for idx in indices(fv)
     tmp = alpha * fv[idx]
     weights[bidx, idx] -= tmp
     weights[tidx, idx] += tmp
   end
-end
-
-function mira_update(weights, bidx, tidx, alpha, fv::Vector)
-  tmp = alpha * fv'
-  weights[bidx, :] -= tmp
-  weights[tidx, :] += tmp
 end
 
 type HildrethState
@@ -309,8 +323,7 @@ function train_mira(fvs, truth, init_model;
       tidx      = model.class_index[t]
       tgt_score = scores[tidx]
 
-      # K-best
-      if h.k > 1
+      if h.k > 1 # K-best
         sorted = sortperm(scores, rev = true)
         for n = 1:h.k
           cidx        = sorted[n]
@@ -328,31 +341,27 @@ function train_mira(fvs, truth, init_model;
 
         # update
         for n = 1:h.k
-          for d in indices(fv)
-            model.weights[kidx[n], d] -= alphas[n] * fv[d]
-            model.weights[tidx, d]    += alphas[n] * fv[d]
-          end
+          mira_update(model.weights, kidx[n], tidx, alphas[n], fv)
         end
-      else
+      else # 1-best
         bidx, b_score = best(scores)
-        #@debug logger "truth: $t -- best class $(model.index_class[bidx]) -- best score: $b_score, truth score: $tgt_score"
-
-        # 1-best
         class = model.index_class[bidx]
         loss  = lossfn(t, class)
         dist  = tgt_score - b_score
         alpha = min((loss - dist) / (2 * sqr(fv)), C)
 
+        #@debug logger "truth: $t -- best class $(model.index_class[bidx]) -- best score: $b_score, truth score: $tgt_score"
         #@debug logger "loss = $loss, dist = $dist [$tgt_score - $b_score], denom = $(2 * norm(fv)^2), alpha = $alpha"
         mira_update(model.weights, bidx, tidx, alpha, fv)
       end
 
       if average
-        for x = 1:size(acc.weights, 1)
-          for y = 1:size(acc.weights, 2)
-            acc.weights[x, y] += model.weights[x, y]
-          end
-        end
+        acc_update(model, acc)
+        # for x = 1:size(acc.weights, 1)
+        #   for y = 1:size(acc.weights, 2)
+        #     acc.weights[x, y] += model.weights[x, y]
+        #   end
+        # end
       end
       numfv += 1
     end
