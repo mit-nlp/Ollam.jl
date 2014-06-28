@@ -16,7 +16,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-module ollam
+module Ollam
 using Stage, LIBSVM, SVM, DataStructures, CVX
 import Base: copy, start, done, next, length, dot
 export LinearModel, copy, score, best, train_perceptron, test_classification, train_svm, train_mira, train_libsvm, lazy_map, indices, 
