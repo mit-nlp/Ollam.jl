@@ -185,11 +185,9 @@ function train_perceptron(fvs, truth, init_model; learn_rate = 1.0, average = tr
       if model.index_class[bidx] != t
         for c = 1:classes(model)
           sign = model.index_class[c] == t ? 1.0 : (-1.0 / (classes(model) - 1))
-          #model.weights[c, :] += sign * learn_rate * fv'
           perceptron_update(model, c, sign * learn_rate, fv)
           if average
             acc_update(model, acc)
-            #acc.weights += model.weights
           end
         end
       end
@@ -357,11 +355,6 @@ function train_mira(fvs, truth, init_model;
 
       if average
         acc_update(model, acc)
-        # for x = 1:size(acc.weights, 1)
-        #   for y = 1:size(acc.weights, 2)
-        #     acc.weights[x, y] += model.weights[x, y]
-        #   end
-        # end
       end
       numfv += 1
     end
@@ -429,7 +422,7 @@ function transfer(svm)
   
   # precompute classifier weights
   start = 1
-  weights = zeros(svm.nfeatures) #Array(Float64, svm.nfeatures)
+  weights = zeros(svm.nfeatures)
 
   for i = 1:ptr.nr_class
     for sv_offset = 0:(nSV[i]-1)
@@ -491,10 +484,10 @@ function train_libsvm(fvs, truth; C = 1.0, nu = 0.5, cache_size = 200.0, eps = 0
     model.b[c] = b_c
   end
 
-  return model # transfer(classes, svms)
+  return model
 end
 
-function train_svm(fvs, truth; C = 0.01, batch_size = -1, iterations = 100)
+function train_svm(fvs, truth; C = 0.01, batch_size = -1, norm = 2, iterations = 100)
   i = 1
   classes = Dict{Any, Int32}()
 
@@ -512,7 +505,6 @@ function train_svm(fvs, truth; C = 0.01, batch_size = -1, iterations = 100)
     batch_size = size(feats, 2)
   end
 
-  #model = LinearModel(classes, size(feats, 1))
   model = LinearModel(classes, size(fs, 1))
 
   svms  = Array(Any, length(classes))
@@ -522,9 +514,7 @@ function train_svm(fvs, truth; C = 0.01, batch_size = -1, iterations = 100)
     @timer logger "training svm for class $t (index: $ti)" begin
       refs[ti] = @spawn begin
         svm_t = cddual(feats, map(c -> c == t ? 1 : -1, truth);
-                       C = C, norm = 2, randomized = true, maxpasses = iterations)
-                    #lambda = C, T = iterations, k = batch_size)
-        #println("size = $(size(svm_t.w))")
+                       C = C, norm = norm, randomized = true, maxpasses = iterations)
         (svm_t.w[1:end-1], svm_t.w[end])
       end
     end
@@ -542,7 +532,7 @@ function train_svm(fvs, truth; C = 0.01, batch_size = -1, iterations = 100)
     model.b[c] = b_c
   end
 
-  return model # transfer(classes, svms)
+  return model
 end
 
 end # module end
