@@ -17,7 +17,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 module Ollam
-using Stage, LIBSVM, SVM, DataStructures, CVX
+using Stage, LIBSVM, SVM, DataStructures
 import Base: copy, start, done, next, length, dot
 export LinearModel, copy, score, best, train_perceptron, test_classification, train_svm, train_mira, train_libsvm, lazy_map, indices, 
        print_confusion_matrix, hildreth, setup_hildreth, zero_one_loss
@@ -505,12 +505,15 @@ function train_svm(fvs, truth; C = 0.01, batch_size = -1, iterations = 100)
     end
   end
 
-  feats = hcat(fvs...)
+  fs = hcat(fvs...)
+  feats = vcat(fs, ones(1, size(fs, 2)))
+
   if batch_size == -1
     batch_size = size(feats, 2)
   end
 
-  model = LinearModel(classes, size(feats, 1))
+  #model = LinearModel(classes, size(feats, 1))
+  model = LinearModel(classes, size(fs, 1))
 
   svms  = Array(Any, length(classes))
   refs  = Array(Any, length(classes))
@@ -518,9 +521,11 @@ function train_svm(fvs, truth; C = 0.01, batch_size = -1, iterations = 100)
   for (t, ti) in classes
     @timer logger "training svm for class $t (index: $ti)" begin
       refs[ti] = @spawn begin
-        svm_t = svm(feats, map(c -> c == t ? 1 : -1, truth);
-                    lambda = C, T = iterations, k = batch_size)
-        (svm_t.w, 0.0)
+        svm_t = cddual(feats, map(c -> c == t ? 1 : -1, truth);
+                       C = C, norm = 2, randomized = true, maxpasses = iterations)
+                    #lambda = C, T = iterations, k = batch_size)
+        #println("size = $(size(svm_t.w))")
+        (svm_t.w[1:end-1], svm_t.w[end])
       end
     end
   end
