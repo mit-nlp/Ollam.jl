@@ -117,6 +117,6 @@ for t in tests
 end
 
 # baseline test with degree-3 RBF kernel
-@timer log "libsvm direct" model = svmtrain(train_truth, train, C = 10.0, verbose = true, shrinking = true)
+@timer log "libsvm 2nd-order rbf direct" model = svmtrain(train_truth, train, C = 10.0, verbose = true, shrinking = true)
 (predicted_labels, decision_values) = svmpredict(model, test)
-@info log "test svm direct: $((1.0 - mean(predicted_labels .== test_truth))*100.0)" 
+@info log "test libsvm 2nd-order rbf direct: $((1.0 - mean(predicted_labels .== test_truth))*100.0)" 
