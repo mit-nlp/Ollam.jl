@@ -76,21 +76,28 @@ function dot(a::Matrix, b::SparseMatrixCSC)
 end
 dot(a::Matrix, b::Vector) = (a * b)[1]
 
-function print_confusion_matrix(confmat)
+function print_confusion_matrix(confmat; width = 10)
+  width = max(5, width)
+  sfmt = "%$(width)s"
+  dfmt = "%$(width)d"
+  ffmt = "%$(width).$(width-3)f"
+  @eval s(x) = @sprintf($sfmt, x)
+  @eval d(x) = @sprintf($dfmt, x)
+  @eval f(x) = @sprintf($ffmt, x)
   total, errors = 0, 0
 
-  str = @sprintf("%10s", "")
+  str = s("")
   for t in keys(confmat)
-    str *= @sprintf(" %10s", t)
+    str *= " " * s(t)
   end
   @sep logger
-  @info logger "$str" * @sprintf(" %10s %10s", "N", "class %")
+  @info logger "$str " * s("N") * " " * s("cl %")
   
   for t in keys(confmat)
-    str = @sprintf("%-10s", t)
+    str = s(t)
     rtotal, rerrors = 0, 0
     for h in keys(confmat)
-      str *= @sprintf(" %10d", confmat[t][h])
+      str *= " " * d(confmat[t][h]) # @sprintf(" %10d", confmat[t][h])
       if t != h
         rerrors += confmat[t][h]
       end
@@ -98,7 +105,7 @@ function print_confusion_matrix(confmat)
     end
     errors += rerrors
     total  += rtotal
-    @info logger "$str" * @sprintf(" %10d %10.7f", rtotal, 1.0 - rerrors/rtotal)
+    @info logger "$str" * " " * d(rtotal) * " " * f(1.0 - rerrors/rtotal) #@sprintf(" %10d %10.7f", rtotal, 1.0 - rerrors/rtotal)
   end
   @sep logger
   
