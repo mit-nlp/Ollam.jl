@@ -47,8 +47,9 @@ done(m :: Map, s) = done(m.itr, s)
 length(m :: Map) = length(m.itr)
 
 # linear algebra helpers
-indices(a::SparseMatrixCSC) = a.rowval
-indices(a::Vector)          = 1:length(a)
+indices(a :: SparseMatrixCSC) = a.rowval
+indices(a :: Vector)          = 1:length(a)
+getnth(a :: SparseMatrixCSC, i :: Integer) = a.nzval[i]
 
 sqr(a::Vector) = norm(a)^2
 function sqr(a::SparseMatrixCSC)
@@ -185,7 +186,7 @@ function train_perceptron(fvs, truth, init_model; learn_rate = 1.0, average = tr
   model = copy(init_model)
   acc   = LinearModel(init_model.class_index, dims(init_model))
   numfv = 0
-  for (fv, t) in zip(fvs, truth)
+  for fv in fvs
     numfv += 1
   end
   avg_w = iterations * numfv
@@ -220,9 +221,19 @@ end
 # ----------------------------------------------------------------------------------------------------------------
 # MIRA
 # ----------------------------------------------------------------------------------------------------------------
-function mira_update(weights, bidx, tidx, alpha, fv)
+function mira_update(weights, bidx, tidx, alpha, fv :: SparseMatrixCSC)
+  ind = indices(fv)
+  for i in 1:length(ind)
+    idx = ind[i]
+    tmp = alpha * fv.nzval[i] # direct access avoids fv[idx] binary search in getindex()
+    weights[bidx, idx] -= tmp
+    weights[tidx, idx] += tmp
+  end
+end
+
+function mira_update(weights, bidx, tidx, alpha, fv :: Array)
   for idx in indices(fv)
-    tmp = alpha * fv[idx]
+    tmp = alpha * fv[idx] # slow for sparse because of getindex() [see above specialization]
     weights[bidx, idx] -= tmp
     weights[tidx, idx] += tmp
   end
@@ -313,6 +324,12 @@ end
 
 zero_one_loss(a, b) = a == b ? 0.0 : 1.0
 
+type DoubleVec
+  v
+end
+getindex(dv :: DoubleVec, i :: Integer) = 2 * dv.v[i]
+dot(v1 :: DoubleVec, v2 :: DoubleVec) = 4 * dot(v1.v, v2.v)
+
 function train_mira(fvs, truth, init_model; 
                     average = true, C = 0.1, k = 1, iterations = 20, lossfn = zero_one_loss,
                     log = Log(STDERR), verbose = true)
@@ -320,14 +337,14 @@ function train_mira(fvs, truth, init_model;
   acc   = LinearModel(init_model.class_index, dims(init_model))
   acc2  = LinearModel(init_model.class_index, dims(init_model))
   numfv = 0
-  for (fv, t) in zip(fvs, truth)
+  for fv in fvs
     numfv += 1
   end
 
   h       = setup_hildreth(k = min(k, length(model.class_index)), C = C)
   b       = Array(Float64, h.k)
   kidx    = Array(Int32, h.k)
-  distvec = Array(Union(SparseMatrixCSC, Vector), h.k)
+  distvec = Array(DoubleVec, h.k) #Array(Union(SparseMatrixCSC, Vector), h.k)
   avg_w   = iterations * numfv
   
   for i = 1:iterations
@@ -349,7 +366,7 @@ function train_mira(fvs, truth, init_model;
           dist        = tgt_score - score
         
           b[n]       = loss - dist
-          distvec[n] = 2 * fv
+          distvec[n] = DoubleVec(fv) # 2 * fv # slow due to allocation
           kidx[n]    = cidx
         end
         
