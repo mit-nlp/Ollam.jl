@@ -120,3 +120,4 @@ end
 @timer log "libsvm 2nd-order rbf direct" model = svmtrain(train_truth, train, C = 10.0, verbose = true, shrinking = true)
 (predicted_labels, decision_values) = svmpredict(model, test)
 @info log "test libsvm 2nd-order rbf direct: $((1.0 - mean(predicted_labels .== test_truth))*100.0)" 
+@test abs(((1.0 - mean(predicted_labels .== test_truth))*100.0) - 3.87) < 0.001
