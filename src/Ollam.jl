@@ -177,20 +177,26 @@ function train_perceptron(fvs, truth, init_model; learn_rate = 1.0, average = tr
                           log = Log(STDERR), verbose = true)
   model = copy(init_model)
   acc   = LinearModel(init_model.class_index, dims(init_model))
+  numfv = 0
+  for (fv, t) in zip(fvs, truth)
+    numfv += 1
+  end
+  avg_w = iterations * numfv
 
   for i = 1:iterations
+    fj = 1
     for (fv, t) in zip(fvs, truth)
       scores     = score(model, fv)
       bidx, b    = best(scores)
+      w          = (avg_w - (numfv * (i - 1) + fj) + 1)
       if model.index_class[bidx] != t
         for c = 1:classes(model)
           sign = model.index_class[c] == t ? 1.0 : (-1.0 / (classes(model) - 1))
           perceptron_update(model, c, sign * learn_rate, fv)
-          if average
-            acc_update(model, acc)
-          end
+          perceptron_update(acc, c, w * sign * learn_rate, fv)
         end
       end
+      fj += 1
     end
     if verbose
       @info log @sprintf("iteration %3d complete (Training error rate: %7.3f%%)", i, test_classification(model, fvs, truth) * 100.0)
@@ -198,7 +204,6 @@ function train_perceptron(fvs, truth, init_model; learn_rate = 1.0, average = tr
   end
   
   if average
-    acc.weights /= (length(fvs) * iterations)
     return acc
   else
     return model
@@ -306,20 +311,26 @@ function train_mira(fvs, truth, init_model;
                     log = Log(STDERR), verbose = true)
   model = copy(init_model)
   acc   = LinearModel(init_model.class_index, dims(init_model))
+  acc2  = LinearModel(init_model.class_index, dims(init_model))
   numfv = 0
+  for (fv, t) in zip(fvs, truth)
+    numfv += 1
+  end
 
   h       = setup_hildreth(k = min(k, length(model.class_index)), C = C)
   b       = Array(Float64, h.k)
   kidx    = Array(Int32, h.k)
   distvec = Array(Union(SparseMatrixCSC, Vector), h.k)
+  avg_w   = iterations * numfv
   
   for i = 1:iterations
-    numfv = 0
+    fj = 1
     alpha = 0.0
     for (fv, t) in zip(fvs, truth)
       scores    = score(model, fv)
       tidx      = model.class_index[t]
       tgt_score = scores[tidx]
+      w         = (avg_w - (numfv * (i - 1) + fj) + 1)
 
       if h.k > 1 # K-best
         sorted = sortperm(scores, rev = true)
@@ -340,6 +351,7 @@ function train_mira(fvs, truth, init_model;
         # update
         for n = 1:h.k
           mira_update(model.weights, kidx[n], tidx, alphas[n], fv)
+          mira_update(acc.weights, kidx[n], tidx, w * alphas[n], fv)
         end
       else # 1-best
         bidx, b_score = best(scores)
@@ -351,12 +363,10 @@ function train_mira(fvs, truth, init_model;
         #@debug logger "truth: $t -- best class $(model.index_class[bidx]) -- best score: $b_score, truth score: $tgt_score"
         #@debug logger "loss = $loss, dist = $dist [$tgt_score - $b_score], denom = $(2 * norm(fv)^2), alpha = $alpha"
         mira_update(model.weights, bidx, tidx, alpha, fv)
+        mira_update(acc.weights, bidx, tidx, w * alpha, fv)
       end
 
-      if average
-        acc_update(model, acc)
-      end
-      numfv += 1
+      fj += 1
     end
     if verbose
       @info log @sprintf("iteration %3d complete (Training error rate: %7.3f%%)", i, test_classification(model, fvs, truth) * 100.0)
@@ -364,7 +374,6 @@ function train_mira(fvs, truth, init_model;
   end
   
   if average
-    acc.weights /= (numfv * iterations)
     return acc
   else
     return model
