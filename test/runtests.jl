@@ -21,9 +21,9 @@ using MNIST, Stage, LIBSVM, GZip
 import Base: length, start, done, next
 using Base.Test
 
+# ----------------------------------------------------------------------------------------------------------------
 # Helpers
-log = Log(STDERR)
-
+# ----------------------------------------------------------------------------------------------------------------
 immutable EachCol{T}
   matrix :: Array{T, 2}
 end
@@ -45,13 +45,13 @@ h = setup_hildreth(C = Inf, k = 2)
 # ----------------------------------------------------------------------------------------------------------------
 xxx = [1, 2, 3]
 for i in lazy_map(f -> f+1, xxx)
-  @info log i
+  @info i
 end
 
 # ----------------------------------------------------------------------------------------------------------------
 # setup MNIST task
 # ----------------------------------------------------------------------------------------------------------------
-@info log "reading training data"
+@info "reading training data"
 const train_raw, train_truth    = traindata()
 const test_raw, test_truth      = testdata()
 const classes                   = Dict{Float64, Int32}()
@@ -83,7 +83,7 @@ for t in test_truth
     i += 1
   end
 end
-@info log "truth set: $classes"
+@info "truth set: $classes"
 
 # ----------------------------------------------------------------------------------------------------------------
 # Online learner test
@@ -110,14 +110,14 @@ tests = [
 # Ollam tests  
 for t in tests
   init  = LinearModel(classes, length(train[:, 1]))
-  @timer log "training $(t.name) model" model = t.trainer(init)
+  @timer "training $(t.name) model" model = t.trainer(init)
   res = test_classification(model, EachCol(t.testset), test_truth) * 100.0
-  @info log  @sprintf("%s test set error rate: %7.3f%%", t.name, res)
+  @info @sprintf("%s test set error rate: %7.3f%%", t.name, res)
   @test abs(res - t.expected) < 0.001
 end
 
 # baseline test with degree-3 RBF kernel
-@timer log "libsvm 2nd-order rbf direct" model = svmtrain(train_truth, train, C = 10.0, verbose = true, shrinking = true)
+@timer "libsvm 2nd-order rbf direct" model = svmtrain(train_truth, train, C = 10.0, verbose = true, shrinking = true)
 (predicted_labels, decision_values) = svmpredict(model, test)
-@info log "test libsvm 2nd-order rbf direct: $((1.0 - mean(predicted_labels .== test_truth))*100.0)" 
+@info "test libsvm 2nd-order rbf direct: $((1.0 - mean(predicted_labels .== test_truth))*100.0)" 
 @test abs(((1.0 - mean(predicted_labels .== test_truth))*100.0) - 3.87) < 0.001

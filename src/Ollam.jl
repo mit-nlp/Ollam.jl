@@ -25,8 +25,6 @@ export LinearModel, copy, score, best, train_perceptron, test_classification, tr
 # ----------------------------------------------------------------------------------------------------------------
 # Utilities
 # ----------------------------------------------------------------------------------------------------------------
-logger = Log(STDERR)
-
 immutable Map{I}
     flt::Function
     itr::I
@@ -77,7 +75,7 @@ function dot(a::Matrix, b::SparseMatrixCSC)
 end
 dot(a::Matrix, b::Vector) = (a * b)[1]
 
-function print_confusion_matrix(confmat; width = 10)
+function print_confusion_matrix(confmat; width = 10, logger = Log(STDERR))
   width = max(5, width)
   sfmt = "%$(width)s"
   dfmt = "%$(width)d"
@@ -86,6 +84,7 @@ function print_confusion_matrix(confmat; width = 10)
   @eval d(x) = @sprintf($dfmt, x)
   @eval f(x) = @sprintf($ffmt, x)
   total, errors = 0, 0
+  accs = 0.0
 
   str = s("")
   for t in keys(confmat)
@@ -107,10 +106,11 @@ function print_confusion_matrix(confmat; width = 10)
     errors += rerrors
     total  += rtotal
     @info logger "$str" * " " * d(rtotal) * " " * f(1.0 - rerrors/rtotal) #@sprintf(" %10d %10.7f", rtotal, 1.0 - rerrors/rtotal)
+    accs += 1.0 - rerrors/rtotal
   end
   @sep logger
   
-  @info logger "accuracy = $(1.0 - errors/total)"
+  @info logger "overall accuracy = $(1.0 - errors/total), average class accuracy = $(accs / length(keys(confmat)))"
   
 end
 
@@ -182,7 +182,7 @@ function perceptron_update(model, c, alpha, fv)
 end
 
 function train_perceptron(fvs, truth, init_model; learn_rate = 1.0, average = true, iterations = 40, 
-                          log = Log(STDERR), verbose = true)
+                          logger = Log(STDERR), verbose = true)
   model = copy(init_model)
   acc   = LinearModel(init_model.class_index, dims(init_model))
   numfv = 0
@@ -207,7 +207,7 @@ function train_perceptron(fvs, truth, init_model; learn_rate = 1.0, average = tr
       fj += 1
     end
     if verbose
-      @info log @sprintf("iteration %3d complete (Training error rate: %7.3f%%)", i, test_classification(model, fvs, truth) * 100.0)
+      @info logger @sprintf("iteration %3d complete (Training error rate: %7.3f%%)", i, test_classification(model, fvs, truth) * 100.0)
     end
   end
   
@@ -332,7 +332,7 @@ dot(v1 :: DoubleVec, v2 :: DoubleVec) = 4 * dot(v1.v, v2.v)
 
 function train_mira(fvs, truth, init_model; 
                     average = true, C = 0.1, k = 1, iterations = 20, lossfn = zero_one_loss,
-                    log = Log(STDERR), verbose = true)
+                    logger = Log(STDERR), verbose = true)
   model = copy(init_model)
   acc   = LinearModel(init_model.class_index, dims(init_model))
   acc2  = LinearModel(init_model.class_index, dims(init_model))
@@ -393,7 +393,7 @@ function train_mira(fvs, truth, init_model;
       fj += 1
     end
     if verbose
-      @info log @sprintf("iteration %3d complete (Training error rate: %7.3f%%)", i, test_classification(model, fvs, truth) * 100.0)
+      @info logger @sprintf("iteration %3d complete (Training error rate: %7.3f%%)", i, test_classification(model, fvs, truth) * 100.0)
     end
   end
   
@@ -408,8 +408,8 @@ end
 # SVM
 # ----------------------------------------------------------------------------------------------------------------
 immutable SVMNode
-    index::Int32
-    value::Float64
+  index::Int32
+  value::Float64
 end
 
 immutable SVMModel
@@ -441,7 +441,7 @@ function transfer_sv(p::Ptr{LIBSVM.SVMNode})
   return ret
 end
 
-function transfer(svm)
+function transfer(svm; logger = Log(STDERR))
   # unpack svm model
   ptr    = unsafe_load(convert(Ptr{SVMModel}, svm.ptr))
   nSV    = pointer_to_array(ptr.nSV, ptr.nr_class)
@@ -476,7 +476,7 @@ function transfer(svm)
   return (weights, b)
 end
 
-function train_libsvm(fvs, truth; C = 1.0, nu = 0.5, cache_size = 200.0, eps = 0.0001, shrinking = true, verbose = false, gamma = 0.5, log = Log(STDERR))
+function train_libsvm(fvs, truth; C = 1.0, nu = 0.5, cache_size = 200.0, eps = 0.0001, shrinking = true, verbose = false, gamma = 0.5, logger = Log(STDERR))
   i = 1
   classes = Dict{Any, Int32}()
 
@@ -500,7 +500,7 @@ function train_libsvm(fvs, truth; C = 1.0, nu = 0.5, cache_size = 200.0, eps = 0
         svm_t = svmtrain(map(c -> c == t ? 1 : -1, truth), feats; 
                          gamma = gamma, C = C, nu = nu, kernel_type = int32(0), degree = int32(1), svm_type = int32(0),
                          cache_size = cache_size, eps = eps, shrinking = shrinking, verbose = verbose)
-        transfer(svm_t)
+        transfer(svm_t, logger = logger)
       end
     end
   end
@@ -520,7 +520,7 @@ function train_libsvm(fvs, truth; C = 1.0, nu = 0.5, cache_size = 200.0, eps = 0
   return model
 end
 
-function train_svm(fvs, truth; C = 0.01, batch_size = -1, norm = 2, iterations = 100)
+function train_svm(fvs, truth; C = 0.01, batch_size = -1, norm = 2, iterations = 100, logger = Log(STDERR))
   i = 1
   classes = Dict{Any, Int32}()
 
