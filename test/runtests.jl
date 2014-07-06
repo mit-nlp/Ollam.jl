@@ -36,7 +36,7 @@ done(e :: EachCol, state) = state > length(e) ? true : false
 # test hildreth
 # ----------------------------------------------------------------------------------------------------------------
 h = setup_hildreth(C = Inf, k = 2)
-@test abs(hildreth((SparseMatrixCSC)[ spzeros(1235, 1),
+@expect abs(hildreth((SparseMatrixCSC)[ spzeros(1235, 1),
                 sparsevec([470=>-1.0, 1070=>-1.0, 1231=>-1.0, 1232=>-1.0, 1233=>-1.0, 1234=>-1.0, 1235=>-1.0, 496=>1.0, 
                            1058=>1.0, 1226=>1.0, 1227=>1.0, 1228=>1.0, 1229=>1.0, 1230=>1.0]) ], [ 0.0, 0.9733606705258293 ], h)[2] - 0.069526) < 0.00001
 
@@ -45,7 +45,7 @@ h = setup_hildreth(C = Inf, k = 2)
 # ----------------------------------------------------------------------------------------------------------------
 xxx = [1, 2, 3]
 for i in lazy_map(f -> f+1, xxx)
-  @info i
+  @expect i == xxx[i-1] + 1
 end
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -113,11 +113,11 @@ for t in tests
   @timer "training $(t.name) model" model = t.trainer(init)
   res = test_classification(model, EachCol(t.testset), test_truth) * 100.0
   @info @sprintf("%s test set error rate: %7.3f%%", t.name, res)
-  @test abs(res - t.expected) < 0.001
+  @expect abs(res - t.expected) < 0.001
 end
 
 # baseline test with degree-3 RBF kernel
 @timer "libsvm 2nd-order rbf direct" model = svmtrain(train_truth, train, C = 10.0, verbose = true, shrinking = true)
 (predicted_labels, decision_values) = svmpredict(model, test)
 @info "test libsvm 2nd-order rbf direct: $((1.0 - mean(predicted_labels .== test_truth))*100.0)" 
-@test abs(((1.0 - mean(predicted_labels .== test_truth))*100.0) - 3.87) < 0.001
+@expect abs(((1.0 - mean(predicted_labels .== test_truth))*100.0) - 3.87) < 0.001
