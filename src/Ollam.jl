@@ -19,8 +19,10 @@
 module Ollam
 using Stage, LIBSVM, SVM, DataStructures
 import Base: copy, start, done, next, length, dot
-export LinearModel, copy, score, best, train_perceptron, test_classification, train_svm, train_mira, train_libsvm, lazy_map, indices, 
-       print_confusion_matrix, hildreth, setup_hildreth, zero_one_loss
+export LinearModel, RegressionModel, copy, score, best, train_perceptron, test_classification, test_regression,
+       train_svm, train_mira, train_libsvm, lazy_map, indices, 
+       print_confusion_matrix, hildreth, setup_hildreth, zero_one_loss, linear_regression_loss, 
+       regress_perceptron, regress_mira
 
 # ----------------------------------------------------------------------------------------------------------------
 # Utilities
@@ -137,6 +139,8 @@ function LinearModel{T}(classes::Dict{T, Int32}, dims)
   return LinearModel(zeros(length(index), dims), zeros(length(index)), classes, index)
 end
 
+RegressionModel(dims) = LinearModel((String=>Int32)["regressor" => 1], dims)
+
 copy(lm :: LinearModel) = LinearModel(copy(lm.weights), copy(lm.b), copy(lm.class_index), copy(lm.index_class))
 score(lm :: LinearModel, fv::Vector) = lm.weights * fv + lm.b
 score(lm :: LinearModel, fv::SparseMatrixCSC) = vec(lm.weights * fv + lm.b)
@@ -148,7 +152,6 @@ function acc_update(model :: LinearModel, acc :: LinearModel)
     end
   end
 end
-
 
 function best{T <: FloatingPoint}(scores :: Vector{T}) 
   bidx = indmax(scores)
@@ -171,6 +174,25 @@ function test_classification(lm :: LinearModel, fvs, truth; record = (truth, hyp
 
   return errors / total
 end
+
+function test_regression(lm :: LinearModel, fvs, truth; lossfn = linear_regression_loss)
+  N = 0
+  total_se = 0.0
+  for (fv, t) in zip(fvs, truth)
+    scores  = score(lm, fv)
+    bidx, b = best(scores)
+    total_se += lossfn(b, t)^2
+    N += 1
+  end
+
+  return total_se / N
+end
+
+# ----------------------------------------------------------------------------------------------------------------
+# Loss functions
+# ----------------------------------------------------------------------------------------------------------------
+zero_one_loss(hyp, ref) = hyp == ref ? 0.0 : 1.0
+linear_regression_loss(hyp, ref) = ref - hyp
 
 # ----------------------------------------------------------------------------------------------------------------
 # Perceptron
@@ -208,6 +230,41 @@ function train_perceptron(fvs, truth, init_model; learn_rate = 1.0, average = tr
     end
     if verbose
       @info logger @sprintf("iteration %3d complete (Training error rate: %7.3f%%)", i, test_classification(model, fvs, truth) * 100.0)
+    end
+  end
+  
+  if average
+    return acc
+  else
+    return model
+  end
+end
+
+function regress_perceptron(fvs, truth, init_model; learn_rate = 0.01, average = true, iterations = 40, C = 0.1,
+                            logger = Log(STDERR), verbose = true, lossfn = linear_regression_loss)
+  model = copy(init_model)
+  acc   = LinearModel(init_model.class_index, dims(init_model))
+  numfv = 0
+  for fv in fvs
+    numfv += 1
+  end
+  avg_w = iterations * numfv
+
+  for i = 1:iterations
+    fj = 1
+    for (fv, t) in zip(fvs, truth)
+      scores  = score(model, fv)
+      bidx, b = best(scores)
+      w       = (avg_w - (numfv * (i - 1) + fj) + 1)
+      loss    = lossfn(b, t)
+      alpha   = min(C, loss * learn_rate)
+      #@debug @sprintf("loss = %10.3f, alpha = %10.7f, expected = %10.7f, ref = %10.7f fv = %s", loss, alpha, b, t, fv)
+      perceptron_update(model, 1, alpha, fv)
+      perceptron_update(acc, 1, w * alpha, fv)
+      fj += 1
+    end
+    if verbose
+      @info logger @sprintf("iteration %3d complete (Training RMSE: %7.3f)", i, sqrt(test_regression(model, fvs, truth)))
     end
   end
   
@@ -322,13 +379,12 @@ function hildreth(a, b, h)
   return h.alpha
 end
 
-zero_one_loss(a, b) = a == b ? 0.0 : 1.0
-
-type DoubleVec
+type ScaledVec{T}
+  k :: T
   v
 end
-getindex(dv :: DoubleVec, i :: Integer) = 2 * dv.v[i]
-dot(v1 :: DoubleVec, v2 :: DoubleVec) = 4 * dot(v1.v, v2.v)
+getindex(dv :: ScaledVec, i :: Integer) = dv.k * dv.v[i]
+dot(v1 :: ScaledVec, v2 :: ScaledVec) = v1.k * v2.k * dot(v1.v, v2.v)
 
 function train_mira(fvs, truth, init_model; 
                     average = true, C = 0.1, k = 1, iterations = 20, lossfn = zero_one_loss,
@@ -344,7 +400,7 @@ function train_mira(fvs, truth, init_model;
   h       = setup_hildreth(k = min(k, length(model.class_index)), C = C)
   b       = Array(Float64, h.k)
   kidx    = Array(Int32, h.k)
-  distvec = Array(DoubleVec, h.k) #Array(Union(SparseMatrixCSC, Vector), h.k)
+  distvec = Array(ScaledVec, h.k) #Array(Union(SparseMatrixCSC, Vector), h.k)
   avg_w   = iterations * numfv
   
   for i = 1:iterations
@@ -366,7 +422,7 @@ function train_mira(fvs, truth, init_model;
           dist        = tgt_score - score
         
           b[n]       = loss - dist
-          distvec[n] = DoubleVec(fv) # 2 * fv # slow due to allocation
+          distvec[n] = ScaledVec(2.0, fv) # 2 * fv # slow due to allocation
           kidx[n]    = cidx
         end
         
@@ -382,7 +438,7 @@ function train_mira(fvs, truth, init_model;
         class = model.index_class[bidx]
         loss  = lossfn(t, class)
         dist  = tgt_score - b_score
-        alpha = min((loss - dist) / (2 * sqr(fv)), C)
+        alpha = max(min((loss - dist) / (2 * sqr(fv)), C), -C)
 
         #@debug logger "truth: $t -- best class $(model.index_class[bidx]) -- best score: $b_score, truth score: $tgt_score"
         #@debug logger "loss = $loss, dist = $dist [$tgt_score - $b_score], denom = $(2 * norm(fv)^2), alpha = $alpha"
@@ -398,6 +454,67 @@ function train_mira(fvs, truth, init_model;
   end
   
   if average
+    return acc
+  else
+    return model
+  end
+end
+
+function mira_regress_update(weights, bidx, alpha, fv :: SparseMatrixCSC)
+  ind = indices(fv)
+  for i in 1:length(ind)
+    idx = ind[i]
+    tmp = alpha * fv.nzval[i] # direct access avoids fv[idx] binary search in getindex()
+    weights[bidx, idx] += tmp
+  end
+end
+
+function mira_regress_update(weights, bidx, alpha, fv :: Array)
+  for idx in indices(fv)
+    tmp = alpha * fv[idx] # slow for sparse because of getindex() [see above specialization]
+    weights[bidx, idx] += tmp
+  end
+end
+
+function regress_mira(fvs, truth, init_model; 
+                    average = true, C = 0.1, min_loss = 0.1, iterations = 20, lossfn = linear_regression_loss,
+                    logger = Log(STDERR), verbose = true)
+  model = copy(init_model)
+  acc   = LinearModel(init_model.class_index, dims(init_model))
+  acc2  = LinearModel(init_model.class_index, dims(init_model))
+  numfv = 0
+  for fv in fvs
+    numfv += 1
+  end
+
+  avg_w   = iterations * numfv
+  
+  for i = 1:iterations
+    fj = 1
+    alpha = 0.0
+    for (fv, t) in zip(fvs, truth)
+      scores        = score(model, fv)
+      w             = (avg_w - (numfv * (i - 1) + fj) + 1)
+      bidx, b_score = best(scores)
+      loss          = lossfn(b_score, t)
+      if abs(loss) < min_loss 
+        loss = 0.0
+      end
+      alpha         = max(min(loss / sqr(fv), C), -C)
+      
+      #@debug logger "$t -> $b_score -- loss = $loss, alpha = $alpha, $(model.weights)"
+      mira_regress_update(model.weights, bidx, alpha, fv)
+      mira_regress_update(acc.weights, bidx, w * alpha, fv)
+
+      fj += 1
+    end
+    if verbose
+      @info logger @sprintf("iteration %3d complete (Training RMSE: %7.3f)", i, sqrt(test_regression(model, fvs, truth)))
+    end
+  end
+  
+  if average
+    acc.weights /= avg_w
     return acc
   else
     return model
