@@ -240,7 +240,7 @@ function train_perceptron(fvs, truth, init_model; learn_rate = 1.0, average = tr
   end
 end
 
-function regress_perceptron(fvs, truth, init_model; learn_rate = 0.01, average = true, iterations = 40, C = 0.1,
+function regress_perceptron(fvs, truth, init_model; learn_rate = 0.01, average = true, iterations = 40, max_update = 0.1,
                             logger = Log(STDERR), verbose = true, lossfn = linear_regression_loss)
   model = copy(init_model)
   acc   = LinearModel(init_model.class_index, dims(init_model))
@@ -257,7 +257,7 @@ function regress_perceptron(fvs, truth, init_model; learn_rate = 0.01, average =
       bidx, b = best(scores)
       w       = (avg_w - (numfv * (i - 1) + fj) + 1)
       loss    = lossfn(b, t)
-      alpha   = min(C, loss * learn_rate)
+      alpha   = max(min(max_update, loss * learn_rate), - max_update)
       #@debug @sprintf("loss = %10.3f, alpha = %10.7f, expected = %10.7f, ref = %10.7f fv = %s", loss, alpha, b, t, fv)
       perceptron_update(model, 1, alpha, fv)
       perceptron_update(acc, 1, w * alpha, fv)
@@ -269,6 +269,7 @@ function regress_perceptron(fvs, truth, init_model; learn_rate = 0.01, average =
   end
   
   if average
+    acc.weights /= avg_w
     return acc
   else
     return model
@@ -477,11 +478,10 @@ function mira_regress_update(weights, bidx, alpha, fv :: Array)
 end
 
 function regress_mira(fvs, truth, init_model; 
-                    average = true, C = 0.1, min_loss = 0.1, iterations = 20, lossfn = linear_regression_loss,
+                    average = true, C = 0.1, min_loss = 0.0, iterations = 20, lossfn = linear_regression_loss,
                     logger = Log(STDERR), verbose = true)
   model = copy(init_model)
   acc   = LinearModel(init_model.class_index, dims(init_model))
-  acc2  = LinearModel(init_model.class_index, dims(init_model))
   numfv = 0
   for fv in fvs
     numfv += 1
@@ -502,8 +502,10 @@ function regress_mira(fvs, truth, init_model;
       end
       alpha         = max(min(loss / sqr(fv), C), -C)
       
-      #@debug logger "$t -> $b_score -- loss = $loss, alpha = $alpha, $(model.weights)"
       mira_regress_update(model.weights, bidx, alpha, fv)
+      #if fj % 100 == 0 # abs(loss) > 7.0
+      #  @debug "$fj: $(model.weights) <- $loss"
+      #end
       mira_regress_update(acc.weights, bidx, w * alpha, fv)
 
       fj += 1
