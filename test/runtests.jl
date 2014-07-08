@@ -68,7 +68,7 @@ srand(0)
 const rand         = shuffle([1:size(mpg_data, 2)])
 const rall         = float64(mpg_data[2:end-1, :])[:, rand]
 const rall_truth   = vec(float64(mpg_data[1, :]))[rand]
-const norm_truth   = (rall_truth - min(rall_truth)) / (max(rall_truth) - min(rall_truth))
+const norm_truth   = (rall_truth - minimum(rall_truth)) / (maximum(rall_truth) - min(rall_truth))
 const m            = zeros(size(rall)) 
 const s            = ones(size(rall))
 const norm_all     = [ (rall[i, j] - m[i]) / s[i] for i = 1:size(rall, 1), j = 1:size(rall, 2) ]
@@ -82,10 +82,10 @@ const rtest_truth  = norm_truth[int(size(rall, 2)*0.8)+1:end]
 # Regression tests
 # ----------------------------------------------------------------------------------------------------------------
 regression_tests = [ 
-  T("perceptron",          (init) -> regress_perceptron(EachCol(rtrain), rtrain_truth, init; iterations = 400, average = false, learn_rate = 1e-7, max_update = 0.1), 0.106, rtest),
-  T("averaged perceptron", (init) -> regress_perceptron(EachCol(rtrain), rtrain_truth, init; iterations = 400, average = true, learn_rate = 1e-7, max_update = 0.1),  0.114, rtest),
-  T("MIRA",                (init) -> regress_mira(EachCol(rtrain), rtrain_truth, init; iterations = 400, average = false),                                            0.099, rtest),
-  T("averaged MIRA",       (init) -> regress_mira(EachCol(rtrain), rtrain_truth, init; iterations = 400, average = true),                                             0.104, rtest),
+  T("perceptron",          (init) -> regress_perceptron(EachCol(rtrain), rtrain_truth, init; iterations = 400, average = false, learn_rate = 1e-7, C = 0.1), 0.106, rtest),
+  T("averaged perceptron", (init) -> regress_perceptron(EachCol(rtrain), rtrain_truth, init; iterations = 400, average = true, learn_rate = 1e-7, C = 0.1),  0.114, rtest),
+  T("MIRA",                (init) -> regress_mira(EachCol(rtrain), rtrain_truth, init; iterations = 400, average = false),                                   0.099, rtest),
+  T("averaged MIRA",       (init) -> regress_mira(EachCol(rtrain), rtrain_truth, init; iterations = 400, average = true),                                    0.104, rtest),
 ]
 
 # Ollam tests  

@@ -240,7 +240,7 @@ function train_perceptron(fvs, truth, init_model; learn_rate = 1.0, average = tr
   end
 end
 
-function regress_perceptron(fvs, truth, init_model; learn_rate = 0.01, average = true, iterations = 40, max_update = 0.1,
+function regress_perceptron(fvs, truth, init_model; learn_rate = 0.01, average = true, iterations = 40, C = 0.1,
                             logger = Log(STDERR), verbose = true, lossfn = linear_regression_loss)
   model = copy(init_model)
   acc   = LinearModel(init_model.class_index, dims(init_model))
@@ -257,7 +257,7 @@ function regress_perceptron(fvs, truth, init_model; learn_rate = 0.01, average =
       bidx, b = best(scores)
       w       = (avg_w - (numfv * (i - 1) + fj) + 1)
       loss    = lossfn(b, t)
-      alpha   = max(min(max_update, loss * learn_rate), - max_update)
+      alpha   = max(min(C, loss * learn_rate), -C)
       #@debug @sprintf("loss = %10.3f, alpha = %10.7f, expected = %10.7f, ref = %10.7f fv = %s", loss, alpha, b, t, fv)
       perceptron_update(model, 1, alpha, fv)
       perceptron_update(acc, 1, w * alpha, fv)
