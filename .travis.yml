@@ -13,5 +13,5 @@ before_install:
     - sudo apt-get install libpcre3-dev julia -y
     - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
 script:
-    - julia -e 'versioninfo(); Pkg.init(); Pkg.clone(pwd())'
+    - julia -e 'versioninfo(); Pkg.init(); Pkg.clone("https://github.com/saltpork/Stage.jl"); Pkg.clone(pwd())'
     - julia --color ./test/runtests.jl
