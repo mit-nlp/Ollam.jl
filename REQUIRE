@@ -3,3 +3,5 @@ LIBSVM
 StatsBase
 SVM
 DataStructures
+MNIST
+
