@@ -138,11 +138,11 @@ classification_tests = [
   # T("linear libSVM",  (init) -> train_libsvm(EachCol(train_deskew), train_truth, C = 1.0, cache_size = 250.0, eps = 0.001, shrinking = true), 7.83, test_deskew),
 
   # baselines
-  T("perceptron",           (init) -> train_perceptron(EachCol(train), train_truth, init; iterations = 50, average = false),  12.74, test),
+  #T("perceptron",           (init) -> train_perceptron(EachCol(train), train_truth, init; iterations = 50, average = false),  12.74, test),
   T("averaged perceptron",  (init) -> train_perceptron(EachCol(train), train_truth, init; iterations = 50, average = true),   12.69, test),
-  T("1-best MIRA",          (init) -> train_mira(EachCol(train), train_truth, init; k = 1, iterations = 30, average = false), 14.26, test),
+  #T("1-best MIRA",          (init) -> train_mira(EachCol(train), train_truth, init; k = 1, iterations = 30, average = false), 14.26, test),
   T("averaged 1-best MIRA", (init) -> train_mira(EachCol(train), train_truth, init; k = 1, iterations = 30, average = true),   8.23, test),
-  T("5-best MIRA",          (init) -> train_mira(EachCol(train), train_truth, init; k = 5, iterations = 30, average = false), 11.46, test),
+  #T("5-best MIRA",          (init) -> train_mira(EachCol(train), train_truth, init; k = 5, iterations = 30, average = false), 11.46, test),
   T("averaged 5-best MIRA", (init) -> train_mira(EachCol(train), train_truth, init; k = 5, iterations = 30, average = true),   7.72, test),
   T("linear SVM",           (init) -> train_svm(EachCol(train), train_truth; C = 0.001, iterations = 100),                     8.73, test),
   # T("linear libSVM",        (init) -> train_libsvm(EachCol(train[:, 1:20000]), train_truth[1:20000], 
