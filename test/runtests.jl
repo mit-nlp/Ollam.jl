@@ -68,7 +68,7 @@ srand(0)
 const rand         = shuffle([1:size(mpg_data, 2)])
 const rall         = float64(mpg_data[2:end-1, :])[:, rand]
 const rall_truth   = vec(float64(mpg_data[1, :]))[rand]
-const norm_truth   = (rall_truth - minimum(rall_truth)) / (maximum(rall_truth) - min(rall_truth))
+const norm_truth   = (rall_truth - minimum(rall_truth)) / (maximum(rall_truth) - minimum(rall_truth))
 const m            = zeros(size(rall)) 
 const s            = ones(size(rall))
 const norm_all     = [ (rall[i, j] - m[i]) / s[i] for i = 1:size(rall, 1), j = 1:size(rall, 2) ]
