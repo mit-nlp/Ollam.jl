@@ -1,5 +1,4 @@
 julia 0.3-
-#https://github.com/saltpork/Stage.jl 0.0.1
 LIBSVM
 SVM
 DataStructures
