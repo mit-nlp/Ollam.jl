@@ -144,7 +144,7 @@ classification_tests = [
   T("averaged 1-best MIRA", (init) -> train_mira(EachCol(train), train_truth, init; k = 1, iterations = 30, average = true),   8.23, test),
   #T("5-best MIRA",          (init) -> train_mira(EachCol(train), train_truth, init; k = 5, iterations = 30, average = false), 11.46, test),
   T("averaged 5-best MIRA", (init) -> train_mira(EachCol(train), train_truth, init; k = 5, iterations = 30, average = true),   7.72, test),
-  #T("linear SVM",           (init) -> train_svm(EachCol(train), train_truth; C = 0.001, iterations = 100),                     8.73, test),
+  T("linear SVM",           (init) -> train_svm(EachCol(train), train_truth; C = 0.001, iterations = 100),                     8.73, test),
   # T("linear libSVM",        (init) -> train_libsvm(EachCol(train[:, 1:20000]), train_truth[1:20000], 
   #                                                     C = 1.0, cache_size = 250.0, eps = 0.001, shrinking = true),             8.85, test),
 ]
@@ -159,8 +159,8 @@ for t in classification_tests
 end
 
 # baseline test with degree-3 RBF kernel
-@timer "libsvm 2nd-order rbf direct" model = svmtrain(train_truth, train, C = 10.0, verbose = true, shrinking = true)
-(predicted_labels, decision_values) = svmpredict(model, test)
-@info "test libsvm 2nd-order rbf direct: $((1.0 - mean(predicted_labels .== test_truth))*100.0)" 
-@expect abs(((1.0 - mean(predicted_labels .== test_truth))*100.0) - 3.87) < 0.001
+# @timer "libsvm 2nd-order rbf direct" model = svmtrain(train_truth, train, C = 10.0, verbose = true, shrinking = true)
+# (predicted_labels, decision_values) = svmpredict(model, test)
+# @info "test libsvm 2nd-order rbf direct: $((1.0 - mean(predicted_labels .== test_truth))*100.0)" 
+# @expect abs(((1.0 - mean(predicted_labels .== test_truth))*100.0) - 3.87) < 0.001
 
