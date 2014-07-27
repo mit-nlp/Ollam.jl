@@ -14,7 +14,7 @@ comparison and initialization).
 Prerequistes
 ------------
 
-- `Stage.jl` - Needed for logging and memoization (manual install required)
+- `Stage.jl` - Needed for logging and memoization *(Note: requires manual install)*
 - `LIBSVM.jl` - LibSVM binaries and julia wrapper
 - `MNIST.jl` - for testing
 
@@ -30,6 +30,11 @@ Pkg.clone("https://github.com/mit-nlp/Ollam.jl")
 ```
 
 This process should install all dependent packages in addition to `Ollam`.
+
+Usage
+-----
+
+See `test/runtests.jl` for detailed usage.
 
 License
 -------
