@@ -27,7 +27,7 @@ export LinearModel, RegressionModel, copy, score, best, train_perceptron, test_c
 # ----------------------------------------------------------------------------------------------------------------
 # Utilities
 # ----------------------------------------------------------------------------------------------------------------
-immutable Map{I}
+struct Map{I}
     flt::Function
     itr::I
 end
@@ -119,7 +119,7 @@ end
 # ----------------------------------------------------------------------------------------------------------------
 # Types
 # ----------------------------------------------------------------------------------------------------------------
-type LinearModel{T}
+mutable struct LinearModel{T}
   weights     :: Matrix{Float64}
   b           :: Vector{Float64}
 
@@ -297,7 +297,7 @@ function mira_update(weights, bidx, tidx, alpha, fv :: Array)
   end
 end
 
-type HildrethState
+mutable struct HildrethState
   k           :: Int32
   alpha       :: Vector{Float64}
   F           :: Vector{Float64}
@@ -380,7 +380,7 @@ function hildreth(a, b, h)
   return h.alpha
 end
 
-type ScaledVec{T}
+mutable struct ScaledVec{T}
   k :: T
   v
 end
