@@ -24,7 +24,7 @@ using Base.Test
 # ----------------------------------------------------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------------------------------------------------
-immutable EachCol{T}
+struct EachCol{T}
   matrix :: Array{T, 2}
 end
 length(e :: EachCol)      = size(e.matrix, 2)
@@ -32,7 +32,7 @@ start(e :: EachCol)       = 1
 next(e :: EachCol, state) = (e.matrix[:, state], state + 1)
 done(e :: EachCol, state) = state > length(e) ? true : false
 
-type T
+mutable struct T
   name     :: String
   trainer  :: Function
   expected :: Float64
