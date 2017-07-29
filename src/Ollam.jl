@@ -17,8 +17,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 module Ollam
-using Stage, LIBSVM, SVM, DataStructures
-import Base: copy, start, done, next, length, dot
+using Stage, LIBSVM, DataStructures #, SVM
+import Base: copy, start, done, next, length, dot, getindex
 export LinearModel, RegressionModel, copy, score, best, train_perceptron, test_classification, test_regression,
        train_svm, train_mira, train_libsvm, lazy_map, indices, 
        print_confusion_matrix, hildreth, setup_hildreth, zero_one_loss, linear_regression_loss, 
@@ -61,7 +61,7 @@ function sqr(a::SparseMatrixCSC)
 end
 dot(a::SparseMatrixCSC, b::Vector) = dot(b, a)
 dot(a::SparseMatrixCSC, b::Matrix) = dot(b, a)
-function dot(a::Union(Vector, SparseMatrixCSC), b::SparseMatrixCSC)
+function dot(a::Union{Vector, SparseMatrixCSC}, b::SparseMatrixCSC)
   total = 0.0
   for i in indices(b)
     total += a[i] * b[i]
@@ -131,7 +131,7 @@ dims(lm :: LinearModel)    = size(lm.weights, 2)
 classes(lm :: LinearModel) = size(lm.weights, 1)
 
 function LinearModel{T}(classes::Dict{T, Int32}, dims) 
-  index = Array(T, length(classes))
+  index = Array{T}(length(classes))
   for (k, i) in classes
     index[i] = k
   end
@@ -139,7 +139,7 @@ function LinearModel{T}(classes::Dict{T, Int32}, dims)
   return LinearModel(zeros(length(index), dims), zeros(length(index)), classes, index)
 end
 
-RegressionModel(dims) = LinearModel((String=>Int32)["regressor" => 1], dims)
+RegressionModel(dims) = LinearModel(Dict{String, Int32}("regressor" => 1), dims)
 
 copy(lm :: LinearModel) = LinearModel(copy(lm.weights), copy(lm.b), copy(lm.class_index), copy(lm.index_class))
 score(lm :: LinearModel, fv::Vector) = lm.weights * fv + lm.b
@@ -153,7 +153,7 @@ function acc_update(model :: LinearModel, acc :: LinearModel)
   end
 end
 
-function best{T <: FloatingPoint}(scores :: Vector{T}) 
+function best{T <: AbstractFloat}(scores :: Vector{T}) 
   bidx = indmax(scores)
   return bidx, scores[bidx]
 end
@@ -399,9 +399,9 @@ function train_mira(fvs, truth, init_model;
   end
 
   h       = setup_hildreth(k = min(k, length(model.class_index)), C = C)
-  b       = Array(Float64, h.k)
-  kidx    = Array(Int32, h.k)
-  distvec = Array(ScaledVec, h.k) #Array(Union(SparseMatrixCSC, Vector), h.k)
+  b       = Array{Float64}(h.k)
+  kidx    = Array{Int32}(h.k)
+  distvec = Array{ScaledVec}(h.k) #Array(Union(SparseMatrixCSC, Vector), h.k)
   avg_w   = iterations * numfv
   
   for i = 1:iterations
@@ -562,28 +562,20 @@ end
 
 function transfer(svm; logger = Log(STDERR))
   # unpack svm model
-  ptr    = unsafe_load(convert(Ptr{SVMModel}, svm.ptr))
-  nSV    = pointer_to_array(ptr.nSV, ptr.nr_class)
-  xSV    = pointer_to_array(ptr.SV, ptr.l)
-  SV     = (Array{LIBSVM.SVMNode, 1})[ transfer_sv(x) for x in xSV ]
-  xsvc   = pointer_to_array(ptr.sv_coef, ptr.nr_class)
-  svc    = (Array{Float64, 1})[ pointer_to_array(x, ptr.l) for x in xsvc ]
-  labels = pointer_to_array(ptr.label, ptr.nr_class)
-  rho    = pointer_to_array(ptr.rho, 1)
-  @debug logger "# of SVs = $(length(SV)), labels = $labels, rho = $rho, $(svm.labels)"
+  labels = svm.labels
+  rho    = svm.rho
+  @debug logger "# of SVs = $(svm.SVs.l), labels = $labels, rho = $rho, $(svm.labels)"
   
   # precompute classifier weights
-  start = 1
+  start = 0
   weights = zeros(svm.nfeatures)
 
-  for i = 1:ptr.nr_class
-    for sv_offset = 0:(nSV[i]-1)
-      sv = SV[start + sv_offset]
-      for d = 1:length(sv)
-        weights[sv[d].index] += svc[1][start + sv_offset] * sv[d].value
-      end
+  for i = 1:svm.nclasses
+    for sv_offset = 1:(svm.SVs.nSV[i])
+      sv = svm.SVs.X[:, sv_offset + start]
+      weights += svm.coefs[start + sv_offset][1] * sv
     end
-    start += nSV[i]
+    start += svm.SVs.nSV[i]
   end
   b = -rho[1]
 
@@ -610,15 +602,15 @@ function train_libsvm(fvs, truth; C = 1.0, nu = 0.5, cache_size = 200.0, eps = 0
   feats = hcat(fvs...)
   model = LinearModel(classes, size(feats, 1))
 
-  svms  = Array(Any, length(classes))
-  refs  = Array(Any, length(classes))
+  svms  = Array{Any}(length(classes))
+  refs  = Array{Any}(length(classes))
 
   for (t, ti) in classes
     @timer logger "training svm for class $t (index: $ti)" begin
       refs[ti] = @spawn begin
-        svm_t = svmtrain(map(c -> c == t ? 1 : -1, truth), feats; 
-                         gamma = gamma, C = C, nu = nu, kernel_type = int32(0), degree = int32(1), svm_type = int32(0),
-                         cache_size = cache_size, eps = eps, shrinking = shrinking, verbose = verbose)
+        svm_t = svmtrain(feats, map(c -> c == t ? 1 : -1, truth); 
+                         gamma = gamma, cost = C, nu = nu, kernel = Kernel.Linear, degree = Integer(1), svmtype = SVC,
+                         cachesize = cache_size, epsilon = eps, shrinking = shrinking, verbose = verbose)
         transfer(svm_t, logger = logger)
       end
     end
@@ -639,52 +631,52 @@ function train_libsvm(fvs, truth; C = 1.0, nu = 0.5, cache_size = 200.0, eps = 0
   return model
 end
 
-function train_svm(fvs, truth; C = 0.01, batch_size = -1, norm = 2, iterations = 100, logger = Log(STDERR))
-  i = 1
-  classes = Dict{Any, Int32}()
+# function train_svm(fvs, truth; C = 0.01, batch_size = -1, norm = 2, iterations = 100, logger = Log(STDERR))
+#   i = 1
+#   classes = Dict{Any, Int32}()
 
-  for t in truth
-    if !(t in keys(classes))
-      classes[t] = i
-      i += 1
-    end
-  end
+#   for t in truth
+#     if !(t in keys(classes))
+#       classes[t] = i
+#       i += 1
+#     end
+#   end
 
-  fs = hcat(fvs...)
-  feats = vcat(fs, ones(1, size(fs, 2)))
+#   fs = hcat(fvs...)
+#   feats = vcat(fs, ones(1, size(fs, 2)))
 
-  if batch_size == -1
-    batch_size = size(feats, 2)
-  end
+#   if batch_size == -1
+#     batch_size = size(feats, 2)
+#   end
 
-  model = LinearModel(classes, size(fs, 1))
+#   model = LinearModel(classes, size(fs, 1))
 
-  svms  = Array(Any, length(classes))
-  refs  = Array(Any, length(classes))
+#   svms  = Array(Any, length(classes))
+#   refs  = Array(Any, length(classes))
 
-  for (t, ti) in classes
-    @timer logger "training svm for class $t (index: $ti)" begin
-      refs[ti] = @spawn begin
-        svm_t = cddual(feats, map(c -> c == t ? 1 : -1, truth);
-                       C = C, norm = norm, randomized = true, maxpasses = iterations)
-        (svm_t.w[1:end-1], svm_t.w[end])
-      end
-    end
-  end
+#   for (t, ti) in classes
+#     @timer logger "training svm for class $t (index: $ti)" begin
+#       refs[ti] = @spawn begin
+#         svm_t = cddual(feats, map(c -> c == t ? 1 : -1, truth);
+#                        C = C, norm = norm, randomized = true, maxpasses = iterations)
+#         (svm_t.w[1:end-1], svm_t.w[end])
+#       end
+#     end
+#   end
 
-  for c = 1:length(refs)
-    svms[c] = fetch(refs[c])
-  end
+#   for c = 1:length(refs)
+#     svms[c] = fetch(refs[c])
+#   end
 
-  for c = 1:length(svms)
-    weights_c, b_c = svms[c]
-    for i = 1:length(weights_c)
-      model.weights[c, i] = weights_c[i]
-    end
-    model.b[c] = b_c
-  end
+#   for c = 1:length(svms)
+#     weights_c, b_c = svms[c]
+#     for i = 1:length(weights_c)
+#       model.weights[c, i] = weights_c[i]
+#     end
+#     model.b[c] = b_c
+#   end
 
-  return model
-end
+#   return model
+# end
 
 end # module end
