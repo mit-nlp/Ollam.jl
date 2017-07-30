@@ -17,7 +17,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 module Ollam
-using Stage, LIBSVM, DataStructures #, SVM
+using Stage, LIBSVM, DataStructures, Formatting #, SVM
 import Base: copy, start, done, next, length, dot, getindex
 export LinearModel, RegressionModel, copy, score, best, train_perceptron, test_classification, test_regression,
        train_svm, train_mira, train_libsvm, lazy_map, indices, 
@@ -82,9 +82,9 @@ function print_confusion_matrix(confmat; width = 10, logger = Log(STDERR))
   sfmt = "%$(width)s"
   dfmt = "%$(width)d"
   ffmt = "%$(width).$(width-3)f"
-  @eval s(x) = @sprintf($sfmt, x)
-  @eval d(x) = @sprintf($dfmt, x)
-  @eval f(x) = @sprintf($ffmt, x)
+  s(x) = sprintf1($sfmt, x)
+  d(x) = sprintf1($dfmt, x)
+  f(x) = sprintf1($ffmt, x)
   total, errors = 0, 0
   accs = 0.0
 
