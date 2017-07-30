@@ -82,9 +82,9 @@ function print_confusion_matrix(confmat; width = 10, logger = Log(STDERR))
   sfmt = "%$(width)s"
   dfmt = "%$(width)d"
   ffmt = "%$(width).$(width-3)f"
-  s(x) = sprintf1($sfmt, x)
-  d(x) = sprintf1($dfmt, x)
-  f(x) = sprintf1($ffmt, x)
+  s(x) = sprintf1(sfmt, x)
+  d(x) = sprintf1(dfmt, x)
+  f(x) = sprintf1(ffmt, x)
   total, errors = 0, 0
   accs = 0.0
 
