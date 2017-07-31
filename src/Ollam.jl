@@ -82,9 +82,12 @@ function print_confusion_matrix(confmat; width = 10, logger = Log(STDERR))
   sfmt = "%$(width)s"
   dfmt = "%$(width)d"
   ffmt = "%$(width).$(width-3)f"
-  s(x) = @sprintf("%10s", x) # Temporary hack
-  d(x) = @sprintf("%10d", x)
-  f(x) = @sprintf("%10.7f", x)
+  @eval sx(x) = @sprintf($sfmt, x)
+  @eval dx(x) = @sprintf($dfmt, x)
+  @eval fx(x) = @sprintf($ffmt, x)
+  s(x) = Base.invokelatest(sx, x) # hack for 0.6
+  d(x) = Base.invokelatest(dx, x)
+  f(x) = Base.invokelatest(fx, x)
   total, errors = 0, 0
   accs = 0.0
 
